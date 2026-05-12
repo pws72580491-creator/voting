@@ -65,7 +65,7 @@ const fb = {
 // ── 선출 규칙 ──────────────────────────────────────────────────
 // round 1: 전체 투표의 2/3 이상 (≥66.67%)
 // round 2: 과반수 초과         (>50%)
-const isElected       = (v, total, round) => total>0 && v>0 && (round===1 ? v/total >= 2/3 : v/total > 0.5);
+const meetsThreshold  = (v, total, round) => total>0 && v>0 && (round===1 ? v/total >= 2/3 : v/total > 0.5);
 const needVotes       = (total, round)    => round===1 ? Math.ceil(total*2/3) : Math.floor(total/2)+1;
 const thresholdPct    = round             => round===1 ? 66.67 : 50;
 const thresholdLabel  = round             => round===1 ? "2/3 이상 (66.7%)" : "과반수 초과 (50%)";
@@ -92,6 +92,8 @@ function App() {
   const [voteMsg,    setVoteMsg]    = useState(null);
   const [vBusy,      setVBusy]      = useState(false);
   const [elTitle,    setElTitle]    = useState("");
+  const [ec1,        setEc1]        = useState("1"); // electCount1 input
+  const [ec2,        setEc2]        = useState("1"); // electCount2 input
   const [form,       setForm]       = useState({ name:"", party:"", desc:"", emoji:"🧑‍💼" });
 
   const token  = useRef(getToken()).current;
@@ -104,7 +106,12 @@ function App() {
     try {
       const data = await fb.get(base, "vote");
       if (data) {
-        if (data.config) { setConfig(data.config); setElTitle(data.config.title||""); }
+        if (data.config) {
+          setConfig(data.config);
+          setElTitle(data.config.title||"");
+          setEc1(String(data.config.electCount1 || 1));
+          setEc2(String(data.config.electCount2 || 1));
+        }
         setCandidates(data.candidates || {});
         setVoters(data.voters || {});
       }
@@ -116,7 +123,7 @@ function App() {
     (async () => {
       try {
         const existing = await fb.get(base, "vote/config");
-        if (!existing) await fb.set(base, "vote/config", { title:"전자투표", open:false, round:1 });
+        if (!existing) await fb.set(base, "vote/config", { title:"전자투표", open:false, round:1, electCount1:1, electCount2:1 });
         await fetchAll();
         setPhase("main");
         timer.current = setInterval(fetchAll, 3000);
@@ -129,15 +136,19 @@ function App() {
   }, []);
 
   // ── 계산값 ─────────────────────────────────────────────────
-  const round       = config.round || 1;
-  const rKey        = `r${round}`;
-  const voted       = !!(voters[token]?.[rKey]);
-  const totalVotes  = Object.values(candidates).reduce((s,c)=>s+(c.votes||0),0);
-  const roundPeople = Object.values(voters).filter(v=>v?.[rKey]).length;
-  const sorted      = Object.entries(candidates).sort(([,a],[,b])=>(b.votes||0)-(a.votes||0));
-  const winner      = sorted.find(([,c])=>isElected(c.votes||0, totalVotes, round));
-  const nv          = needVotes(totalVotes, round);
-  const tp          = thresholdPct(round);
+  const round        = config.round || 1;
+  const rKey         = `r${round}`;
+  const voted        = !!(voters[token]?.[rKey]);
+  const electCount   = round===1 ? (config.electCount1||1) : (config.electCount2||1);
+  const totalVotes   = Object.values(candidates).reduce((s,c)=>s+(c.votes||0),0);
+  const roundPeople  = Object.values(voters).filter(v=>v?.[rKey]).length;
+  const sorted       = Object.entries(candidates).sort(([,a],[,b])=>(b.votes||0)-(a.votes||0));
+  // 기준 충족 후보 중 상위 electCount명이 선출됨
+  const electedList  = sorted.filter(([,c])=>meetsThreshold(c.votes||0, totalVotes, round)).slice(0, electCount);
+  const electedIds   = new Set(electedList.map(([id])=>id));
+  const electionDone = electedList.length >= electCount;
+  const nv           = needVotes(totalVotes, round);
+  const tp           = thresholdPct(round);
 
   // ── 투표 ───────────────────────────────────────────────────
   const submitVote = async () => {
@@ -156,10 +167,17 @@ function App() {
 
   // ── 관리자 ─────────────────────────────────────────────────
   const saveTitle   = async () => { await fb.patch(base,"vote/config",{title:elTitle}); setConfig(p=>({...p,title:elTitle})); };
+  const saveElectCount = async () => {
+    const n1 = Math.max(1, parseInt(ec1)||1);
+    const n2 = Math.max(1, parseInt(ec2)||1);
+    await fb.patch(base,"vote/config",{electCount1:n1, electCount2:n2});
+    setConfig(p=>({...p,electCount1:n1,electCount2:n2}));
+  };
   const toggleOpen  = async () => { const n=!config.open; await fb.patch(base,"vote/config",{open:n}); setConfig(p=>({...p,open:n})); };
 
   const advanceRunoff = async () => {
-    if (!confirm("결선 투표로 진행합니까?\n\n1차 결과가 저장되고, 참여자는 결선에서 다시 투표할 수 있습니다.")) return;
+    const remaining = electCount - electedList.length;
+    if (!confirm(`결선 투표로 진행합니까?\n\n1차 결과가 저장되고, 참여자는 결선에서 다시 투표할 수 있습니다.\n결선 선출 인원: ${config.electCount2||1}명`)) return;
     for (const [id,c] of Object.entries(candidates))
       await fb.patch(base,`vote/candidates/${id}`,{ votes_r1:c.votes||0, votes:0 });
     await fb.patch(base,"vote/config",{ round:2, open:false });
@@ -347,32 +365,39 @@ function App() {
           <div className="fadein">
 
             {/* 선출 완료 배너 */}
-            {winner&&!config.open&&(
-              <div style={{background:C.goldBg,border:`1px solid ${C.goldBorder}`,borderRadius:16,padding:"28px 20px",textAlign:"center",marginBottom:20,boxShadow:"0 0 48px rgba(245,197,24,0.08)"}}>
-                <div style={{fontSize:52,marginBottom:10}}>🏆</div>
-                <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",marginBottom:6}}>
-                  {round===1?"1차 투표":"결선 투표"} 선출 완료
+            {electionDone&&!config.open&&(
+              <div style={{background:C.goldBg,border:`1px solid ${C.goldBorder}`,borderRadius:16,padding:"24px 20px",marginBottom:20,boxShadow:"0 0 48px rgba(245,197,24,0.08)"}}>
+                <div style={{fontSize:44,marginBottom:8,textAlign:"center"}}>🏆</div>
+                <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",marginBottom:10,textAlign:"center"}}>
+                  {round===1?"1차 투표":"결선 투표"} 선출 완료 ({electedList.length}명)
                 </div>
-                <div style={{fontSize:26,fontWeight:900,color:C.text,marginBottom:4}}>
-                  {winner[1].emoji} {winner[1].name}
-                </div>
-                {winner[1].party&&<div style={{color:C.muted,fontSize:13,marginBottom:8}}>{winner[1].party}</div>}
-                <div style={{fontSize:20,fontWeight:900,color:C.gold}}>
-                  {winner[1].votes}표 ({totalVotes>0?((winner[1].votes/totalVotes)*100).toFixed(1):0}%)
-                </div>
+                {electedList.map(([id,c],i)=>(
+                  <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"rgba(245,197,24,0.06)",borderRadius:10,marginBottom:i<electedList.length-1?6:0}}>
+                    <span style={{fontSize:24}}>{c.emoji||"👤"}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:800,color:C.text,fontSize:15}}>{c.name}{c.party&&<span style={{color:C.muted,fontWeight:400,fontSize:12,marginLeft:6}}>{c.party}</span>}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontWeight:900,color:C.gold,fontSize:16}}>{c.votes}표</div>
+                      <div style={{color:C.muted,fontSize:11}}>{totalVotes>0?((c.votes/totalVotes)*100).toFixed(1):0}%</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
             {/* 기준 미달 안내 */}
-            {!winner&&!config.open&&totalVotes>0&&(
+            {!electionDone&&!config.open&&totalVotes>0&&(
               <div style={{background:"rgba(249,115,22,0.07)",border:"1px solid rgba(249,115,22,0.18)",borderRadius:12,padding:"14px 18px",marginBottom:16,textAlign:"center"}}>
                 <div style={{color:"#fb923c",fontWeight:800,fontSize:14,marginBottom:4}}>
                   {round===1?"⚠️ 1차 투표 — 선출 기준 미달":"⚠️ 결선 투표 — 선출 기준 미달"}
                 </div>
-                <div style={{color:C.muted,fontSize:13}}>
-                  선출 기준: 총 {totalVotes}표 중 <strong style={{color:C.text}}>{nv}표 이상</strong> ({thresholdLabel(round)})
+                <div style={{color:C.muted,fontSize:13,lineHeight:1.8}}>
+                  선출 기준: {thresholdLabel(round)}<br/>
+                  현재 선출: <strong style={{color:C.text}}>{electedList.length}명</strong> / 목표: <strong style={{color:C.text}}>{electCount}명</strong>
+                  {totalVotes>0&&<><br/>선출에 필요한 득표: <strong style={{color:C.text}}>{nv}표 이상</strong> (현재 총 {totalVotes}표)</>}
                 </div>
-                {round===1&&<div style={{color:C.muted,fontSize:12,marginTop:4}}>관리자가 결선 투표를 시작할 수 있습니다.</div>}
+                {round===1&&<div style={{color:C.muted,fontSize:12,marginTop:6}}>관리자가 결선 투표를 시작할 수 있습니다.</div>}
               </div>
             )}
 
@@ -380,11 +405,11 @@ function App() {
             <div style={{display:"flex",gap:8,marginBottom:16}}>
               {[
                 {n:totalVotes,     l:"총 득표수"},
-                {n:roundPeople,    l:`${round===1?"1차":"결선"} 참여자`},
+                {n:`${electedList.length} / ${electCount}명`, l:"선출 현황", c:electionDone?C.gold:C.muted},
                 {n:round===1?"1차":"결선", l:"현재 차수", c:round===1?C.glow:"#fb923c"},
               ].map((s,i)=>(
                 <div key={i} style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 8px",textAlign:"center"}}>
-                  <div style={{fontSize:22,fontWeight:900,color:s.c||C.glow}}>{s.n}</div>
+                  <div style={{fontSize:i===1?16:22,fontWeight:900,color:s.c||C.glow}}>{s.n}</div>
                   <div style={{color:C.muted,fontSize:10,fontWeight:700,marginTop:3}}>{s.l}</div>
                 </div>
               ))}
@@ -402,8 +427,9 @@ function App() {
             {/* 결과 목록 */}
             {sorted.map(([id,c],i)=>{
               const pct  = totalVotes>0?(c.votes||0)/totalVotes*100:0;
-              const elct = isElected(c.votes||0,totalVotes,round);
+              const elct = electedIds.has(id);
               const r1total = Object.values(candidates).reduce((s,x)=>s+(x.votes_r1||0),0);
+              const rankLabel = elct ? `🏆` : `${i+1}`;
               return (
                 <div key={id} style={{background:elct?C.goldBg:C.card,border:`1px solid ${elct?C.goldBorder:C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -459,8 +485,9 @@ function App() {
               <div style={{background:"#0a1624",borderRadius:10,padding:"12px 14px",marginBottom:14,fontSize:13,lineHeight:2,color:C.muted}}>
                 <div>차수: <strong style={{color:C.text}}>{round===1?"1차 투표":"🔥 결선 투표"}</strong></div>
                 <div>선출 기준: <strong style={{color:C.gold}}>{thresholdLabel(round)}</strong></div>
+                <div>선출 인원: <strong style={{color:C.text}}>{electCount}명</strong> (현재 선출: {electedList.length}명)</div>
                 <div>현재 상태: <strong style={{color:config.open?C.green:C.red}}>{config.open?"진행중":"대기중"}</strong></div>
-                {totalVotes>0&&<div>선출 필요 득표: <strong style={{color:C.text}}>{nv}표</strong> (총 {totalVotes}표 기준)</div>}
+                {totalVotes>0&&<div>선출 필요 득표: <strong style={{color:C.text}}>{nv}표 이상</strong> (총 {totalVotes}표 기준)</div>}
               </div>
 
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
@@ -472,17 +499,17 @@ function App() {
                     🔥 결선 투표로 진행
                   </button>
                 )}
-                <button style={mkBtn("#3b1c6a",{width:"100%",color:"#c084fc",padding:"12px 10px",marginTop:4})} onClick={resetAll}>
-                  🔄 전체 초기화 (1차로 되돌리기)
-                </button>
-              </div>
 
-              {!winner&&!config.open&&totalVotes>0&&round===1&&(
+              {!electionDone&&!config.open&&totalVotes>0&&round===1&&(
                 <div style={{marginTop:12,padding:"10px 14px",background:"rgba(249,115,22,0.07)",border:"1px solid rgba(249,115,22,0.18)",borderRadius:8,color:"#fb923c",fontSize:13,lineHeight:1.8}}>
-                  ⚠️ 1차에서 아무도 2/3를 달성하지 못했습니다.<br/>
+                  ⚠️ 1차 목표 {electCount}명 중 {electedList.length}명만 선출되었습니다.<br/>
                   <strong>결선 투표로 진행</strong> 버튼을 눌러 결선을 시작하세요.
                 </div>
               )}
+              <button style={mkBtn("#3b1c6a",{width:"100%",color:"#c084fc",padding:"12px 10px",marginTop:8})} onClick={resetAll}>
+                🔄 전체 초기화 (1차로 되돌리기)
+              </button>
+            </div>
             </div>
 
             {/* 선거 제목 */}
@@ -491,6 +518,37 @@ function App() {
               <div style={{display:"flex",gap:8}}>
                 <input style={{...inp,flex:1,marginBottom:0}} value={elTitle} onChange={e=>setElTitle(e.target.value)} placeholder="선거 제목"/>
                 <button style={mkBtn()} onClick={saveTitle}>저장</button>
+              </div>
+            </div>
+
+            {/* 선출 인원 설정 */}
+            <div style={sec}>
+              <h3 style={sth}>🎯 선출 인원 설정</h3>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                <div>
+                  <label style={lbl}>1차 투표 선출 인원</label>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <button onClick={()=>setEc1(p=>String(Math.max(1,parseInt(p)-1)))} style={{...mkBtn(C.dim),padding:"8px 14px",fontSize:18,color:C.text}}>−</button>
+                    <input style={{...inp,marginBottom:0,textAlign:"center",fontSize:20,fontWeight:900,flex:1}} type="number" min="1" value={ec1} onChange={e=>setEc1(e.target.value)}/>
+                    <button onClick={()=>setEc1(p=>String(parseInt(p)+1))} style={{...mkBtn(C.dim),padding:"8px 14px",fontSize:18,color:C.text}}>＋</button>
+                  </div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:4,textAlign:"center"}}>기준: 2/3 이상</div>
+                </div>
+                <div>
+                  <label style={lbl}>결선 투표 선출 인원</label>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <button onClick={()=>setEc2(p=>String(Math.max(1,parseInt(p)-1)))} style={{...mkBtn(C.dim),padding:"8px 14px",fontSize:18,color:C.text}}>−</button>
+                    <input style={{...inp,marginBottom:0,textAlign:"center",fontSize:20,fontWeight:900,flex:1}} type="number" min="1" value={ec2} onChange={e=>setEc2(e.target.value)}/>
+                    <button onClick={()=>setEc2(p=>String(parseInt(p)+1))} style={{...mkBtn(C.dim),padding:"8px 14px",fontSize:18,color:C.text}}>＋</button>
+                  </div>
+                  <div style={{color:C.muted,fontSize:11,marginTop:4,textAlign:"center"}}>기준: 과반수 초과</div>
+                </div>
+              </div>
+              <button style={mkBtn(C.accent,{width:"100%",padding:"12px"})} onClick={saveElectCount}>
+                선출 인원 저장
+              </button>
+              <div style={{marginTop:10,color:C.muted,fontSize:12,lineHeight:1.7,padding:"8px 12px",background:"#0a1826",borderRadius:8}}>
+                💡 현재 설정: 1차 <strong style={{color:C.text}}>{config.electCount1||1}명</strong>, 결선 <strong style={{color:C.text}}>{config.electCount2||1}명</strong>
               </div>
             </div>
 
