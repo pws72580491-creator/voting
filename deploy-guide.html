@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🚀 GitHub Pages 배포 가이드</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Noto Sans KR', sans-serif; background: #080f1a; color: #e2eaf3; line-height: 1.7; padding-bottom: 80px; }
+    a { color: #3b9ed4; }
+
+    .hero { background: radial-gradient(ellipse at 50% 0%, #0d2d4a, #080f1a 70%); border-bottom: 1px solid #1e3a5f; padding: 56px 24px 44px; text-align: center; }
+    .hero-emoji { font-size: 60px; margin-bottom: 14px; }
+    .hero h1 { font-size: 28px; font-weight: 900; letter-spacing: -1px; margin-bottom: 8px; }
+    .hero p { color: #6b8aaa; font-size: 15px; }
+
+    .wrap { max-width: 720px; margin: 0 auto; padding: 0 20px; }
+    .section { margin-top: 44px; }
+    .section-title { font-size: 19px; font-weight: 800; margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid #1e3a5f; display: flex; align-items: center; gap: 10px; }
+
+    /* Steps */
+    .steps-list { list-style: none; }
+    .step-item { display: flex; gap: 18px; padding: 20px 0; border-bottom: 1px solid #112033; }
+    .step-item:last-child { border-bottom: none; }
+    .step-num { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #1a6fa8, #0e4d78); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 15px; color: #fff; box-shadow: 0 2px 12px rgba(29,111,164,0.35); }
+    .step-body h4 { font-weight: 800; font-size: 15px; margin-bottom: 6px; color: #e2eaf3; }
+    .step-body p, .step-body li { color: #6b8aaa; font-size: 14px; line-height: 2; }
+    .step-body ul { padding-left: 18px; margin-top: 4px; }
+
+    /* Code */
+    .code { background: #040d17; border: 1px solid #1e3a5f; border-radius: 10px; padding: 14px 18px; font-family: 'Menlo','Consolas',monospace; font-size: 13px; color: #7dd3fc; line-height: 1.9; margin: 10px 0; overflow-x: auto; position: relative; }
+    .code .cmt { color: #3a6a8a; }
+    .copy-btn { position: absolute; top: 10px; right: 10px; background: #1e3a5f; border: none; color: #6b8aaa; font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-family: inherit; }
+    .copy-btn:hover { color: #e2eaf3; }
+
+    /* Cards */
+    .card { background: #0d1b2a; border: 1px solid #1e3a5f; border-radius: 14px; padding: 20px 22px; margin-bottom: 12px; }
+    .card-title { font-weight: 800; font-size: 15px; margin-bottom: 8px; }
+
+    /* Info boxes */
+    .info { background: rgba(59,158,212,0.07); border: 1px solid rgba(59,158,212,0.2); border-radius: 10px; padding: 13px 16px; font-size: 14px; color: #7dd3fc; margin: 10px 0; }
+    .tip  { background: rgba(34,197,94,0.07);  border: 1px solid rgba(34,197,94,0.2);  border-radius: 10px; padding: 13px 16px; font-size: 14px; color: #86efac; margin: 10px 0; }
+    .warn { background: rgba(245,197,24,0.07); border: 1px solid rgba(245,197,24,0.2); border-radius: 10px; padding: 13px 16px; font-size: 14px; color: #fde68a; margin: 10px 0; }
+
+    .hl { background: rgba(59,158,212,0.15); color: #7dd3fc; padding: 2px 8px; border-radius: 5px; font-family: monospace; font-size: 13px; }
+    .tag { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 700; }
+    .tag-green  { background: rgba(34,197,94,0.1); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
+    .tag-blue   { background: rgba(59,158,212,0.1); color: #3b9ed4; border: 1px solid rgba(59,158,212,0.2); }
+
+    /* URL display */
+    .url-box { background: linear-gradient(135deg, rgba(29,111,164,0.15), rgba(14,77,120,0.15)); border: 1px solid rgba(59,158,212,0.3); border-radius: 12px; padding: 20px 22px; margin: 16px 0; text-align: center; }
+    .url-box .url-label { color: #6b8aaa; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px; }
+    .url-box .url-text { font-family: monospace; font-size: 16px; color: #7dd3fc; font-weight: 700; word-break: break-all; }
+
+    /* Screenshot mockup */
+    .mock { background: #040d17; border: 1px solid #1e3a5f; border-radius: 12px; padding: 16px; margin: 10px 0; }
+    .mock-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+    .mock-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .mock-content { background: #0d1b2a; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #6b8aaa; }
+
+    /* Table */
+    .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .tbl th { background: #0d1b2a; color: #6b8aaa; font-weight: 700; padding: 10px 14px; text-align: left; border-bottom: 1px solid #1e3a5f; }
+    .tbl td { padding: 10px 14px; border-bottom: 1px solid #112033; vertical-align: top; }
+    .tbl tr:last-child td { border-bottom: none; }
+
+    hr { border: none; border-top: 1px solid #1e3a5f; margin: 40px 0; }
+    footer { text-align: center; color: #2a4a6b; font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-emoji">🚀</div>
+  <h1>GitHub Pages 배포 가이드</h1>
+  <p>무료로 공개 URL을 만들어 누구나 투표에 참여하게 하세요</p>
+</div>
+
+<div class="wrap">
+
+  <!-- ── 배포할 파일 목록 ── -->
+  <div class="section">
+    <h2 class="section-title">📁 업로드할 파일 목록</h2>
+    <div class="card">
+      <table class="tbl">
+        <thead><tr><th>파일명</th><th>역할</th><th>필수</th></tr></thead>
+        <tbody>
+          <tr><td><span class="hl">index.html</span></td><td>투표 시스템 본체 (메인 페이지)</td><td><span class="tag tag-green">필수</span></td></tr>
+          <tr><td><span class="hl">voting-guide.html</span></td><td>사용 설명서</td><td><span class="tag tag-blue">선택</span></td></tr>
+          <tr><td><span class="hl">README.md</span></td><td>GitHub 저장소 소개</td><td><span class="tag tag-blue">선택</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tip">✅ GitHub Pages는 <strong>index.html</strong>을 메인 페이지로 자동 서빙합니다. 파일명이 정확한지 확인하세요.</div>
+  </div>
+
+  <!-- ── Step-by-Step ── -->
+  <div class="section">
+    <h2 class="section-title">🛠️ 배포 단계별 가이드</h2>
+
+    <ul class="steps-list">
+
+      <li class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>GitHub 계정 만들기 (이미 있으면 건너뛰기)</h4>
+          <p><a href="https://github.com/signup" target="_blank">github.com/signup</a> 에서 무료 계정 생성</p>
+        </div>
+      </li>
+
+      <li class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>새 저장소(Repository) 생성</h4>
+          <ul>
+            <li><a href="https://github.com/new" target="_blank">github.com/new</a> 접속</li>
+            <li><strong>Repository name</strong>: <span class="hl">voting</span> (원하는 이름 가능)</li>
+            <li><strong>Public</strong> 선택 (GitHub Pages 무료 사용 조건)</li>
+            <li>✅ <strong>Add a README file</strong> 체크</li>
+            <li><strong>Create repository</strong> 클릭</li>
+          </ul>
+        </div>
+      </li>
+
+      <li class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>파일 업로드</h4>
+          <ul>
+            <li>저장소 메인 페이지 → <strong>Add file</strong> → <strong>Upload files</strong></li>
+            <li>아래 파일들을 드래그&드롭:
+              <div class="code" style="margin-top:8px">
+                index.html<br/>
+                voting-guide.html<br/>
+                README.md
+              </div>
+            </li>
+            <li>하단 <strong>Commit changes</strong> 클릭</li>
+          </ul>
+          <div class="warn" style="margin-top:8px">⚠️ <span class="hl">voting-system.html</span>이 아니라 <span class="hl">index.html</span>로 업로드해야 합니다!</div>
+        </div>
+      </li>
+
+      <li class="step-item">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>GitHub Pages 활성화</h4>
+          <ul>
+            <li>저장소 상단 <strong>Settings</strong> 탭 클릭</li>
+            <li>왼쪽 메뉴 → <strong>Pages</strong></li>
+            <li><strong>Source</strong> → <strong>Deploy from a branch</strong></li>
+            <li><strong>Branch</strong> → <span class="hl">main</span> / <span class="hl">root</span> 선택 → <strong>Save</strong></li>
+          </ul>
+          <div class="mock" style="margin-top:10px">
+            <div class="mock-bar">
+              <div class="mock-dot" style="background:#ef4444"></div>
+              <div class="mock-dot" style="background:#f5c518"></div>
+              <div class="mock-dot" style="background:#22c55e"></div>
+            </div>
+            <div class="mock-content">
+              <div style="color:#6b8aaa; margin-bottom:6px">Settings → Pages</div>
+              <div style="color:#e2eaf3">Source: <span style="color:#22c55e">Deploy from a branch ✓</span></div>
+              <div style="color:#e2eaf3">Branch: <span style="color:#3b9ed4">main</span> / <span style="color:#3b9ed4">/ (root)</span> &nbsp;<span style="background:#1a6fa8;color:#fff;padding:2px 10px;border-radius:4px;font-size:12px">Save</span></div>
+            </div>
+          </div>
+        </div>
+      </li>
+
+      <li class="step-item">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>배포 완료 — URL 확인</h4>
+          <p>1~2분 후 Settings → Pages 상단에 URL이 표시됩니다:</p>
+          <div class="url-box">
+            <div class="url-label">🌐 배포 주소</div>
+            <div class="url-text">https://<span style="color:#f5c518">내-아이디</span>.github.io/<span style="color:#f5c518">voting</span>/</div>
+          </div>
+          <p>이 URL을 참여자에게 카카오톡, 문자, QR코드 등으로 공유하면 됩니다.</p>
+        </div>
+      </li>
+
+    </ul>
+  </div>
+
+  <!-- ── Firebase CORS 설정 ── -->
+  <div class="section">
+    <h2 class="section-title">🔥 Firebase 규칙 확인</h2>
+    <div class="card">
+      <div class="card-title">외부에서 접근 허용 (이미 설정된 경우 건너뛰기)</div>
+      <p style="color:#6b8aaa; font-size:14px; margin-bottom:10px">
+        <a href="https://console.firebase.google.com/project/voting-9aa78/database/voting-9aa78-default-rtdb/rules" target="_blank">
+          Firebase Console → voting-9aa78 → Realtime Database → 규칙(Rules)
+        </a>
+      </p>
+      <div class="code">
+        <button class="copy-btn" onclick="copyCode(this)">복사</button>{
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}
+      </div>
+      <p style="color:#6b8aaa; font-size:13px; margin-top:8px">위 규칙으로 설정 후 <strong style="color:#e2eaf3">게시(Publish)</strong> 클릭</p>
+    </div>
+    <div class="warn">
+      ⚠️ 이 규칙은 누구나 읽고 쓸 수 있습니다. 소규모 행사·내부 투표에 적합하며, 대규모 공개 투표에는 인증 규칙 추가를 권장합니다.
+    </div>
+  </div>
+
+  <!-- ── 참여자 공유 방법 ── -->
+  <div class="section">
+    <h2 class="section-title">📲 참여자 공유 방법</h2>
+    <div class="card">
+      <table class="tbl">
+        <thead><tr><th>방법</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>URL 직접 공유</strong></td>
+            <td>카카오톡, 슬랙, 문자로 주소 전송</td>
+          </tr>
+          <tr>
+            <td><strong>QR코드 생성</strong></td>
+            <td><a href="https://qr.io" target="_blank">qr.io</a> 또는 <a href="https://www.qr-code-generator.com" target="_blank">qr-code-generator.com</a>에서 URL 입력 → QR 이미지 다운로드</td>
+          </tr>
+          <tr>
+            <td><strong>단축 URL</strong></td>
+            <td><a href="https://bitly.com" target="_blank">bit.ly</a>로 짧은 주소 만들기</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tip">✅ 참여자는 <strong>인터넷이 되는 기기 + 브라우저</strong>만 있으면 됩니다. 앱 설치 불필요.</div>
+  </div>
+
+  <!-- ── 업데이트 방법 ── -->
+  <div class="section">
+    <h2 class="section-title">🔄 파일 수정 후 재배포</h2>
+    <div class="card">
+      <ol style="color:#6b8aaa; font-size:14px; line-height:2.2; padding-left:20px">
+        <li>GitHub 저장소 접속 → 수정할 파일 클릭</li>
+        <li>우측 상단 연필(✏️) 아이콘 클릭</li>
+        <li>내용 수정 후 <strong style="color:#e2eaf3">Commit changes</strong></li>
+        <li>1~2분 후 자동 재배포 완료</li>
+      </ol>
+    </div>
+    <div class="info">💡 또는 저장소에서 <strong>Add file → Upload files</strong>로 파일 덮어쓰기 가능</div>
+  </div>
+
+  <hr/>
+  <footer style="margin-top:24px">
+    🗳️ 전자투표 시스템 · GitHub Pages 무료 배포
+  </footer>
+
+</div>
+
+<script>
+  function copyCode(btn) {
+    const code = btn.parentElement.innerText.replace("복사","").replace("✓ 복사됨","").trim();
+    navigator.clipboard.writeText(code).then(() => {
+      btn.textContent = "✓ 복사됨";
+      setTimeout(() => btn.textContent = "복사", 2000);
+    });
+  }
+</script>
+</body>
+</html>
