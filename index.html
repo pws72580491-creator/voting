@@ -259,12 +259,12 @@ function App() {
     <div style={{background:"#f0f4f8",minHeight:"100vh",color:C.text}}>
 
       {/* ── 헤더 ── */}
-      <header style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 18px",borderBottom:`1px solid ${C.border}`,background:"linear-gradient(90deg,#1e3a5f,#2563eb)",position:"sticky",top:0,zIndex:10}}>
+      <header style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 18px",borderBottom:`1px solid ${C.border}`,background:"#ffffff",position:"sticky",top:0,zIndex:10,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:22}}>🗳️</span>
           <div>
-            <div style={{fontSize:16,fontWeight:800,letterSpacing:"-0.3px"}}>{config.title||"전자투표"}</div>
-            <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.3px",color:round===1?C.muted:"#fb923c"}}>
+            <div style={{fontSize:16,fontWeight:800,letterSpacing:"-0.3px",color:"#1e293b"}}>{config.title||"전자투표"}</div>
+            <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.3px",color:round===1?"#64748b":"#ea580c"}}>
               {round===1?"1차 투표":"🔥 결선 투표"}
             </div>
           </div>
