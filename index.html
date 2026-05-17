@@ -62,13 +62,25 @@ const fb = {
   del:   async (b,p)   => fetch(`${b}/${p}.json`,{method:"DELETE"}),
 };
 
-// ── 선출 규칙 ──────────────────────────────────────────────────
-// round 1: 전체 투표의 2/3 이상 (≥66.67%)
-// round 2: 과반수 초과         (>50%)
-const meetsThreshold  = (v, total, round) => total>0 && v>0 && (round===1 ? v/total >= 2/3 : v/total > 0.5);
-const needVotes       = (total, round)    => round===1 ? Math.ceil(total*2/3) : Math.floor(total/2)+1;
-const thresholdPct    = round             => round===1 ? 66.67 : 50;
-const thresholdLabel  = round             => round===1 ? "2/3 이상 (66.7%)" : "과반수 초과 (50%)";
+// ── 선출 규칙 옵션 ─────────────────────────────────────────────
+// type: "two_thirds" | "majority" | "plurality" | "custom"
+const THRESHOLD_OPTIONS = [
+  { value:"two_thirds", label:"2/3 이상 (66.7%)",   pct:66.67, calc:(v,t)=>t>0&&v>0&&v/t>=2/3,       need:(t)=>Math.ceil(t*2/3) },
+  { value:"majority",   label:"과반수 초과 (50%+1)", pct:50,    calc:(v,t)=>t>0&&v>0&&v/t>0.5,        need:(t)=>Math.floor(t/2)+1 },
+  { value:"half",       label:"1/2 이상 (50%)",      pct:50,    calc:(v,t)=>t>0&&v>0&&v/t>=0.5,       need:(t)=>Math.ceil(t/2) },
+  { value:"three_q",   label:"3/4 이상 (75%)",       pct:75,    calc:(v,t)=>t>0&&v>0&&v/t>=0.75,      need:(t)=>Math.ceil(t*3/4) },
+  { value:"one_third",  label:"1/3 이상 (33.3%)",    pct:33.33, calc:(v,t)=>t>0&&v>0&&v/t>=1/3,       need:(t)=>Math.ceil(t/3) },
+  { value:"plurality",  label:"최다득표 (득표 무관)", pct:0,     calc:(v,t,isTop)=>t>0&&v>0&&isTop,    need:()=>1 },
+];
+const getOpt = (val) => THRESHOLD_OPTIONS.find(o=>o.value===val) || THRESHOLD_OPTIONS[0];
+
+const meetsThreshold = (v, total, optVal, isTop=false) => {
+  const opt = getOpt(optVal);
+  return opt.calc(v, total, isTop);
+};
+const needVotes    = (total, optVal) => getOpt(optVal).need(total);
+const thresholdPct = (optVal)        => getOpt(optVal).pct;
+const thresholdLabel = (optVal)      => getOpt(optVal).label;
 
 // ── 공용 스타일 ────────────────────────────────────────────────
 const inp = { width:"100%", background:"#f8fafc", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.text, fontSize:15, outline:"none", boxSizing:"border-box", marginBottom:10, fontFamily:"inherit", boxShadow:"inset 0 1px 3px rgba(0,0,0,0.06)" };
@@ -88,15 +100,20 @@ function App() {
   const [isAdmin,    setIsAdmin]    = useState(false);
   const [modal,      setModal]      = useState(false);
   const [adminPw,    setAdminPw]    = useState("");
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedIds,setSelectedIds]= useState([]); // 다중 선택
   const [voteMsg,    setVoteMsg]    = useState(null);
   const [vBusy,      setVBusy]      = useState(false);
   const [elTitle,    setElTitle]    = useState("");
   const [ec1,        setEc1]        = useState("1"); // electCount1 input
   const [ec2,        setEc2]        = useState("1"); // electCount2 input
+  const [et1,        setEt1]        = useState("two_thirds"); // threshold1 input
+  const [et2,        setEt2]        = useState("majority");   // threshold2 input
   const [form,       setForm]       = useState({ name:"", party:"", desc:"", emoji:"🧑‍💼" });
 
   const token     = useRef(getToken()).current;
+  // 라운드 변경 시 선택 초기화
+  const prevRound  = useRef(1);
+  useEffect(()=>{ if(config.round!==prevRound.current){ setSelectedIds([]); setVoteMsg(null); prevRound.current=config.round; } },[config.round]);
   const base      = DB_URL.replace(/\/+$/, "");
   const timer     = useRef(null);
   const savedPw   = useRef(localStorage.getItem("evote_pw") || "1234");
@@ -115,6 +132,8 @@ function App() {
             setElTitle(data.config.title||"");
             setEc1(String(data.config.electCount1 || 1));
             setEc2(String(data.config.electCount2 || 1));
+            setEt1(data.config.threshold1 || "two_thirds");
+            setEt2(data.config.threshold2 || "majority");
             firstLoad.current = false;
           }
         }
@@ -129,7 +148,7 @@ function App() {
     (async () => {
       try {
         const existing = await fb.get(base, "vote/config");
-        if (!existing) await fb.set(base, "vote/config", { title:"전자투표", open:false, round:1, electCount1:1, electCount2:1, completed:false });
+        if (!existing) await fb.set(base, "vote/config", { title:"전자투표", open:false, round:1, electCount1:1, electCount2:1, threshold1:"two_thirds", threshold2:"majority", completed:false });
         await fetchAll();
         setPhase("main");
         timer.current = setInterval(fetchAll, 3000);
@@ -146,26 +165,50 @@ function App() {
   const rKey         = `r${round}`;
   const voted        = !!(voters[token]?.[rKey]);
   const electCount   = round===1 ? (config.electCount1||1) : (config.electCount2||1);
+  const threshOpt    = round===1 ? (config.threshold1||"two_thirds") : (config.threshold2||"majority");
   const totalVotes   = Object.values(candidates).reduce((s,c)=>s+(c.votes||0),0);
   const roundPeople  = Object.values(voters).filter(v=>v?.[rKey]).length;
+  const abstainCount = Object.values(voters).filter(v=>v?.[rKey]==="abstain").length;
   const sorted       = Object.entries(candidates).sort(([,a],[,b])=>(b.votes||0)-(a.votes||0));
-  // 기준 충족 후보 중 상위 electCount명이 선출됨
-  const electedList  = sorted.filter(([,c])=>meetsThreshold(c.votes||0, totalVotes, round)).slice(0, electCount);
+  // plurality(최다득표)는 득표수 관계없이 상위 N명 선출
+  const isPluralityMode = threshOpt === "plurality";
+  const electedList  = isPluralityMode
+    ? sorted.slice(0, electCount).filter(([,c])=>(c.votes||0)>0)
+    : sorted.filter(([,c])=>meetsThreshold(c.votes||0, totalVotes, threshOpt)).slice(0, electCount);
   const electedIds   = new Set(electedList.map(([id])=>id));
   const electionDone = electedList.length >= electCount;
-  const nv           = needVotes(totalVotes, round);
-  const tp           = thresholdPct(round);
+  const nv           = needVotes(totalVotes, threshOpt);
+  const tp           = thresholdPct(threshOpt);
 
-  // ── 투표 ───────────────────────────────────────────────────
-  const submitVote = async () => {
-    if (!selectedId)  { setVoteMsg({err:"후보자를 선택하세요"});      return; }
+  // ── 투표 (다중 선택 / 기권 지원) ──────────────────────────
+  const toggleCandidate = (id) => {
+    if (!config.open) return;
+    setVoteMsg(null);
+    setSelectedIds(prev => {
+      if (prev.includes(id)) return prev.filter(x=>x!==id); // 토글 해제
+      if (prev.length >= electCount) {
+        setVoteMsg({err:`최대 ${electCount}명까지 선택할 수 있습니다`});
+        return prev;
+      }
+      return [...prev, id];
+    });
+  };
+
+  const submitVote = async (abstain=false) => {
     if (!config.open) { setVoteMsg({err:"투표가 진행 중이 아닙니다"}); return; }
     if (voted)        { setVoteMsg({err:"이미 투표하셨습니다"});       return; }
+    if (!abstain && selectedIds.length===0) { setVoteMsg({err:"후보자를 선택하거나 기권을 눌러주세요"}); return; }
     setVBusy(true);
     try {
-      await fb.patch(base, `vote/candidates/${selectedId}`, { votes:(candidates[selectedId]?.votes||0)+1 });
-      await fb.patch(base, `vote/voters/${token}`, { [rKey]:true });
-      setVoteMsg({ ok: candidates[selectedId]?.name });
+      if (!abstain) {
+        // 선택한 후보자 각각 +1표
+        for (const id of selectedIds) {
+          await fb.patch(base, `vote/candidates/${id}`, { votes:(candidates[id]?.votes||0)+1 });
+        }
+      }
+      // 투표 기록 (무기명: 누구에게 투표했는지 저장 안 함)
+      await fb.patch(base, `vote/voters/${token}`, { [rKey]: abstain ? "abstain" : true });
+      setVoteMsg({ ok: abstain ? null : selectedIds.length, abstain });
       await fetchAll();
     } catch(e) { setVoteMsg({err:"오류: "+e.message}); }
     finally { setVBusy(false); }
@@ -183,8 +226,8 @@ function App() {
     const n2 = Math.max(1, parseInt(ec2)||1);
     setEc1(String(n1));
     setEc2(String(n2));
-    await fb.patch(base,"vote/config",{electCount1:n1, electCount2:n2});
-    setConfig(p=>({...p,electCount1:n1,electCount2:n2}));
+    await fb.patch(base,"vote/config",{electCount1:n1, electCount2:n2, threshold1:et1, threshold2:et2});
+    setConfig(p=>({...p, electCount1:n1, electCount2:n2, threshold1:et1, threshold2:et2}));
   };
   const toggleOpen  = async () => {
     const n = !config.open;
@@ -208,7 +251,7 @@ function App() {
     for (const id of Object.keys(candidates))
       await fb.patch(base,`vote/candidates/${id}`,{ votes:0, votes_r1:0 });
     await fb.del(base,"vote/voters");
-    await fb.patch(base,"vote/config",{ round:1, open:false, completed:false });
+    await fb.patch(base,"vote/config",{ round:1, open:false, completed:false, threshold1:et1||"two_thirds", threshold2:et2||"majority" });
     await fetchAll();
   };
 
@@ -315,7 +358,7 @@ function App() {
             {/* 차수 / 기준 안내 */}
             <div style={{background:round===1?"#eff6ff":"#fff7ed",border:`1px solid ${round===1?"#bfdbfe":"#fed7aa"}`,borderRadius:10,padding:"11px 16px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
               <span style={{color:round===1?C.glow:"#fb923c",fontWeight:800,fontSize:14}}>{round===1?"📋 1차 투표":"🔥 결선 투표"}</span>
-              <span style={{color:C.muted,fontSize:12}}>선출 기준: <strong style={{color:C.text}}>{thresholdLabel(round)}</strong></span>
+              <span style={{color:C.muted,fontSize:12}}>선출 기준: <strong style={{color:C.text}}>{thresholdLabel(threshOpt)}</strong></span>
             </div>
 
             {!config.open&&!voted&&(
@@ -325,14 +368,17 @@ function App() {
             )}
 
             {voted?(
-              <div className="fadein" style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:16,padding:"36px 24px",textAlign:"center",boxShadow:"0 2px 12px rgba(22,163,74,0.08)"}}>
-                <div style={{fontSize:52,marginBottom:12}}>✅</div>
-                <div style={{fontSize:21,fontWeight:900,color:C.green,marginBottom:6}}>투표 완료!</div>
+              <div className="fadein" style={{background: voters[token]?.[rKey]==="abstain"?"#f8fafc":"#f0fdf4", border:`1px solid ${voters[token]?.[rKey]==="abstain"?"#e2e8f0":"#bbf7d0"}`, borderRadius:16, padding:"36px 24px", textAlign:"center", boxShadow:"0 2px 12px rgba(22,163,74,0.08)"}}>
+                <div style={{fontSize:52,marginBottom:12}}>
+                  {voters[token]?.[rKey]==="abstain" ? "✋" : "✅"}
+                </div>
+                <div style={{fontSize:21,fontWeight:900,color:voters[token]?.[rKey]==="abstain"?C.muted:C.green,marginBottom:6}}>
+                  {voters[token]?.[rKey]==="abstain" ? "기권 처리됨" : "투표 완료!"}
+                </div>
                 <div style={{color:C.muted,fontSize:14,lineHeight:1.9,marginBottom:20}}>
                   {round===1?"1차 투표":"결선 투표"}에 참여하셨습니다.<br/>
-                  <span style={{fontSize:12,color:"#4ade80"}}>🔒 무기명으로 처리되었습니다</span>
+                  <span style={{fontSize:12,color:voters[token]?.[rKey]==="abstain"?"#94a3b8":"#4ade80"}}>🔒 무기명으로 처리되었습니다</span>
                 </div>
-                {/* 결과 보기: 투표 종료(completed) 후 공개 */}
                 {config.completed ? (
                   <button style={mkBtn("#2563eb",{color:"#fff",padding:"10px 22px"})} onClick={()=>setTab("results")}>
                     📊 결과 보기
@@ -345,24 +391,37 @@ function App() {
               </div>
             ):(
               <>
-                <label style={{...lbl,marginBottom:10}}>
-                  후보자 선택
-                  <span style={{color:"#4ade80",fontWeight:600,fontSize:10,textTransform:"none",letterSpacing:0,marginLeft:6}}>🔒 무기명</span>
-                </label>
+                {/* 선택 현황 바 */}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                  <label style={{...lbl,marginBottom:0}}>
+                    후보자 선택
+                    <span style={{color:"#16a34a",fontWeight:600,fontSize:10,textTransform:"none",letterSpacing:0,marginLeft:6}}>🔒 무기명</span>
+                  </label>
+                  <div style={{display:"flex",alignItems:"center",gap:6,background:selectedIds.length===electCount?"#dcfce7":"#eff6ff",border:`1px solid ${selectedIds.length===electCount?"#86efac":"#bfdbfe"}`,borderRadius:99,padding:"4px 12px"}}>
+                    <span style={{fontWeight:900,fontSize:15,color:selectedIds.length===electCount?C.green:C.accent}}>{selectedIds.length}</span>
+                    <span style={{color:C.muted,fontSize:12}}>/ {electCount}명 선택</span>
+                  </div>
+                </div>
 
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:12,marginBottom:12}}>
-                  {Object.entries(candidates).map(([id,c])=>(
-                    <div key={id} onClick={()=>{if(config.open){setSelectedId(id);setVoteMsg(null);}}}
-                      style={{background:selectedId===id?"rgba(37,99,235,0.08)":"#ffffff",border:selectedId===id?`2px solid ${C.glow}`:`1px solid #d1dbe8`,borderRadius:14,padding:"18px 14px",textAlign:"center",cursor:config.open?"pointer":"default",position:"relative",boxShadow:selectedId===id?"0 0 0 4px rgba(37,99,235,0.1)":"0 1px 4px rgba(0,0,0,0.06)",transition:"all 0.15s",userSelect:"none"}}>
-                      {selectedId===id&&(
-                        <div style={{position:"absolute",top:8,right:8,background:C.glow,color:"#fff",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900}}>✓</div>
+                  {Object.entries(candidates).map(([id,c])=>{
+                    const isSelected = selectedIds.includes(id);
+                    const selIdx = selectedIds.indexOf(id);
+                    return (
+                    <div key={id} onClick={()=>toggleCandidate(id)}
+                      style={{background:isSelected?"rgba(37,99,235,0.07)":"#ffffff",border:isSelected?`2px solid ${C.accent}`:`1px solid #d1dbe8`,borderRadius:14,padding:"18px 14px",textAlign:"center",cursor:config.open?"pointer":"default",position:"relative",boxShadow:isSelected?"0 0 0 4px rgba(37,99,235,0.1)":"0 1px 4px rgba(0,0,0,0.06)",transition:"all 0.15s",userSelect:"none"}}>
+                      {isSelected&&(
+                        <div style={{position:"absolute",top:8,right:8,background:C.accent,color:"#fff",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900}}>
+                          {electCount===1?"✓":selIdx+1}
+                        </div>
                       )}
                       <div style={{fontSize:42,marginBottom:8}}>{c.emoji||"👤"}</div>
                       <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:5}}>{c.name}</div>
                       {c.party&&<div style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:99,display:"inline-block",border:"1px solid #e2e8f0"}}>{c.party}</div>}
                       {c.desc&&<div style={{color:C.muted,fontSize:11,marginTop:7,lineHeight:1.5}}>{c.desc}</div>}
                     </div>
-                  ))}
+                    );
+                  })}
                   {Object.keys(candidates).length===0&&(
                     <div style={{color:C.muted,textAlign:"center",padding:"48px 20px",gridColumn:"1/-1",fontSize:14,lineHeight:2}}>
                       등록된 후보자가 없습니다<br/>
@@ -377,12 +436,24 @@ function App() {
                   </div>
                 )}
 
-                <button onClick={submitVote} disabled={vBusy||!selectedId||!config.open}
-                  style={{width:"100%",padding:"16px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#1a6fa8,#0e4d78)",color:"#fff",fontSize:17,fontWeight:900,cursor:(!selectedId||!config.open)?"not-allowed":"pointer",marginTop:8,fontFamily:"inherit",boxShadow:"0 6px 24px rgba(29,111,164,0.28)",opacity:(!selectedId||!config.open||vBusy)?0.28:1,letterSpacing:"0.3px",transition:"opacity 0.15s"}}>
-                  {vBusy?"처리 중...":"🔒 무기명으로 투표하기"}
+                {/* 투표 버튼 */}
+                <button onClick={()=>submitVote(false)} disabled={vBusy||selectedIds.length===0||!config.open}
+                  style={{width:"100%",padding:"16px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#2563eb,#1d4ed8)",color:"#fff",fontSize:16,fontWeight:900,cursor:(selectedIds.length===0||!config.open)?"not-allowed":"pointer",marginTop:8,fontFamily:"inherit",boxShadow:"0 6px 24px rgba(37,99,235,0.28)",opacity:(selectedIds.length===0||!config.open||vBusy)?0.28:1,transition:"opacity 0.15s"}}>
+                  {vBusy?"처리 중...":`🔒 ${selectedIds.length}명 선택 · 투표하기`}
                 </button>
-                <div style={{textAlign:"center",color:C.muted,fontSize:11,marginTop:8}}>
-                  투표자 신원은 어디에도 저장되지 않습니다
+
+                {/* 기권 버튼 */}
+                {config.open&&(
+                  <button onClick={()=>{ if(confirm("기권하시겠습니까?
+기권 후 재투표는 불가합니다.")) submitVote(true); }}
+                    disabled={vBusy}
+                    style={{width:"100%",padding:"12px",borderRadius:10,border:"1px solid #e2e8f0",background:"#f8fafc",color:C.muted,fontSize:14,fontWeight:700,cursor:"pointer",marginTop:8,fontFamily:"inherit",transition:"all 0.15s"}}>
+                    ✋ 기권하기
+                  </button>
+                )}
+
+                <div style={{textAlign:"center",color:C.muted,fontSize:11,marginTop:10,lineHeight:1.7}}>
+                  {electCount}명을 선택하세요 (중복 선택 불가) · 투표자 신원은 저장되지 않습니다
                 </div>
               </>
             )}
@@ -424,7 +495,7 @@ function App() {
                   {round===1?"⚠️ 1차 투표 — 선출 기준 미달":"⚠️ 결선 투표 — 선출 기준 미달"}
                 </div>
                 <div style={{color:C.muted,fontSize:13,lineHeight:1.8}}>
-                  선출 기준: {thresholdLabel(round)}<br/>
+                  선출 기준: {thresholdLabel(threshOpt)}<br/>
                   현재 선출: <strong style={{color:C.text}}>{electedList.length}명</strong> / 목표: <strong style={{color:C.text}}>{electCount}명</strong>
                   {totalVotes>0&&<><br/>선출에 필요한 득표: <strong style={{color:C.text}}>{nv}표 이상</strong> (현재 총 {totalVotes}표)</>}
                 </div>
@@ -433,13 +504,14 @@ function App() {
             )}
 
             {/* 통계 카드 */}
-            <div style={{display:"flex",gap:8,marginBottom:16}}>
+            <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
               {[
                 {n:totalVotes,     l:"총 득표수"},
                 {n:`${electedList.length} / ${electCount}명`, l:"선출 현황", c:electionDone?C.gold:C.muted},
-                {n:round===1?"1차":"결선", l:"현재 차수", c:round===1?C.glow:"#fb923c"},
+                {n:roundPeople,    l:"참여자 수"},
+                {n:abstainCount,   l:"기권"},
               ].map((s,i)=>(
-                <div key={i} style={{flex:1,background:"#ffffff",border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 8px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+                <div key={i} style={{flex:"1 1 40%",background:"#ffffff",border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 8px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
                   <div style={{fontSize:i===1?16:22,fontWeight:900,color:s.c||C.glow}}>{s.n}</div>
                   <div style={{color:C.muted,fontSize:10,fontWeight:700,marginTop:3}}>{s.l}</div>
                 </div>
@@ -450,7 +522,7 @@ function App() {
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 12px",background:"rgba(217,119,6,0.05)",border:"1px solid rgba(217,119,6,0.2)",borderRadius:8}}>
               <div style={{width:3,height:14,background:C.gold,borderRadius:2,flexShrink:0}}/>
               <span style={{color:C.muted,fontSize:12}}>
-                황금선 = 선출 기준: <strong style={{color:C.gold}}>{thresholdLabel(round)}</strong>
+                황금선 = 선출 기준: <strong style={{color:C.gold}}>{thresholdLabel(threshOpt)}</strong>
                 {totalVotes>0&&<> ({nv}표 필요)</>}
               </span>
             </div>
@@ -515,7 +587,7 @@ function App() {
               <h3 style={sth}>🔄 투표 진행 관리</h3>
               <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",marginBottom:14,fontSize:13,lineHeight:2,color:C.muted}}>
                 <div>차수: <strong style={{color:C.text}}>{round===1?"1차 투표":"🔥 결선 투표"}</strong></div>
-                <div>선출 기준: <strong style={{color:C.gold}}>{thresholdLabel(round)}</strong></div>
+                <div>선출 기준: <strong style={{color:C.gold}}>{thresholdLabel(threshOpt)}</strong></div>
                 <div>선출 인원: <strong style={{color:C.text}}>{electCount}명</strong> (현재 선출: {electedList.length}명)</div>
                 <div>현재 상태: <strong style={{color:config.open?C.green:config.completed?"#7c3aed":C.muted}}>
                   {config.open?"🟢 진행중":config.completed?"✅ 종료됨":"⏸ 대기중"}
@@ -554,34 +626,59 @@ function App() {
               </div>
             </div>
 
-            {/* 선출 인원 설정 */}
+            {/* 선출 인원 · 기준 설정 */}
             <div style={sec}>
-              <h3 style={sth}>🎯 선출 인원 설정</h3>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-                <div>
-                  <label style={lbl}>1차 투표 선출 인원</label>
+              <h3 style={sth}>🎯 선출 인원 · 기준 설정</h3>
+
+              {/* 1차 투표 */}
+              <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"14px 16px",marginBottom:10}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#1d4ed8",marginBottom:12}}>📋 1차 투표</div>
+                <div style={{marginBottom:10}}>
+                  <label style={lbl}>선출 인원</label>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <button onClick={()=>setEc1(p=>String(Math.max(1,parseInt(p)-1)))} style={{...mkBtn("#f1f5f9"),padding:"8px 14px",fontSize:18,color:C.text,border:"1px solid #e2e8f0"}}>−</button>
-                    <input style={{...inp,marginBottom:0,textAlign:"center",fontSize:20,fontWeight:900,flex:1}} type="number" min="1" value={ec1} onChange={e=>setEc1(e.target.value)}/>
-                    <button onClick={()=>setEc1(p=>String(parseInt(p)+1))} style={{...mkBtn("#f1f5f9"),padding:"8px 14px",fontSize:18,color:C.text,border:"1px solid #e2e8f0"}}>＋</button>
+                    <button style={{width:36,height:36,borderRadius:7,border:"1px solid #bfdbfe",background:"#fff",color:C.text,fontSize:20,cursor:"pointer",fontWeight:700,flexShrink:0}} onClick={()=>setEc1(p=>String(Math.max(1,(parseInt(p)||1)-1)))}>−</button>
+                    <input style={{...inp,marginBottom:0,textAlign:"center",fontSize:18,fontWeight:900,flex:1,padding:"7px"}} type="number" min="1" value={ec1} onChange={e=>setEc1(e.target.value)}/>
+                    <button style={{width:36,height:36,borderRadius:7,border:"1px solid #bfdbfe",background:"#fff",color:C.text,fontSize:20,cursor:"pointer",fontWeight:700,flexShrink:0}} onClick={()=>setEc1(p=>String((parseInt(p)||1)+1))}>＋</button>
+                    <span style={{color:C.muted,fontSize:13}}>명</span>
                   </div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:4,textAlign:"center"}}>기준: 2/3 이상</div>
                 </div>
                 <div>
-                  <label style={lbl}>결선 투표 선출 인원</label>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <button onClick={()=>setEc2(p=>String(Math.max(1,parseInt(p)-1)))} style={{...mkBtn("#f1f5f9"),padding:"8px 14px",fontSize:18,color:C.text,border:"1px solid #e2e8f0"}}>−</button>
-                    <input style={{...inp,marginBottom:0,textAlign:"center",fontSize:20,fontWeight:900,flex:1}} type="number" min="1" value={ec2} onChange={e=>setEc2(e.target.value)}/>
-                    <button onClick={()=>setEc2(p=>String(parseInt(p)+1))} style={{...mkBtn("#f1f5f9"),padding:"8px 14px",fontSize:18,color:C.text,border:"1px solid #e2e8f0"}}>＋</button>
-                  </div>
-                  <div style={{color:C.muted,fontSize:11,marginTop:4,textAlign:"center"}}>기준: 과반수 초과</div>
+                  <label style={lbl}>선출 기준</label>
+                  <select value={et1} onChange={e=>setEt1(e.target.value)}
+                    style={{width:"100%",background:"#fff",border:"1px solid #bfdbfe",borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,fontWeight:600,outline:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                    {THRESHOLD_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
                 </div>
               </div>
-              <button style={mkBtn(C.accent,{width:"100%",padding:"12px"})} onClick={saveElectCount}>
-                선출 인원 저장
+
+              {/* 결선 투표 */}
+              <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"14px 16px",marginBottom:12}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#c2410c",marginBottom:12}}>🔥 결선 투표</div>
+                <div style={{marginBottom:10}}>
+                  <label style={lbl}>선출 인원</label>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <button style={{width:36,height:36,borderRadius:7,border:"1px solid #fed7aa",background:"#fff",color:C.text,fontSize:20,cursor:"pointer",fontWeight:700,flexShrink:0}} onClick={()=>setEc2(p=>String(Math.max(1,(parseInt(p)||1)-1)))}>−</button>
+                    <input style={{...inp,marginBottom:0,textAlign:"center",fontSize:18,fontWeight:900,flex:1,padding:"7px"}} type="number" min="1" value={ec2} onChange={e=>setEc2(e.target.value)}/>
+                    <button style={{width:36,height:36,borderRadius:7,border:"1px solid #fed7aa",background:"#fff",color:C.text,fontSize:20,cursor:"pointer",fontWeight:700,flexShrink:0}} onClick={()=>setEc2(p=>String((parseInt(p)||1)+1))}>＋</button>
+                    <span style={{color:C.muted,fontSize:13}}>명</span>
+                  </div>
+                </div>
+                <div>
+                  <label style={lbl}>선출 기준</label>
+                  <select value={et2} onChange={e=>setEt2(e.target.value)}
+                    style={{width:"100%",background:"#fff",border:"1px solid #fed7aa",borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,fontWeight:600,outline:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                    {THRESHOLD_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <button style={mkBtn(C.accent,{width:"100%",padding:"13px",fontSize:15,fontWeight:800})} onClick={saveElectCount}>
+                💾 설정 저장
               </button>
-              <div style={{marginTop:10,color:C.muted,fontSize:12,lineHeight:1.7,padding:"8px 12px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:8}}>
-                💡 현재 설정: 1차 <strong style={{color:C.text}}>{config.electCount1||1}명</strong>, 결선 <strong style={{color:C.text}}>{config.electCount2||1}명</strong>
+              <div style={{marginTop:10,color:C.muted,fontSize:12,lineHeight:1.9,padding:"10px 14px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:8}}>
+                💡 현재 적용<br/>
+                · 1차: <strong style={{color:C.text}}>{config.electCount1||1}명</strong> / {thresholdLabel(config.threshold1||"two_thirds")}<br/>
+                · 결선: <strong style={{color:C.text}}>{config.electCount2||1}명</strong> / {thresholdLabel(config.threshold2||"majority")}
               </div>
             </div>
 
@@ -625,8 +722,8 @@ function App() {
             {/* 무기명 통계 */}
             <div style={sec}>
               <h3 style={sth}>🔒 투표 현황 (무기명)</h3>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                {[{n:roundPeople,l:`${round===1?"1차":"결선"} 참여자`},{n:totalVotes,l:"총 득표수"}].map((s,i)=>(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+                {[{n:roundPeople,l:`${round===1?"1차":"결선"} 참여자`},{n:totalVotes,l:"총 득표수"},{n:abstainCount,l:"기권"}].map((s,i)=>(
                   <div key={i} style={{background:"#f8fafc",border:`1px solid ${C.border}`,borderRadius:10,padding:"14px 12px",textAlign:"center"}}>
                     <div style={{fontSize:26,fontWeight:900,color:C.glow}}>{s.n}</div>
                     <div style={{color:C.muted,fontSize:11,marginTop:3}}>{s.l}</div>
