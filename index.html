@@ -10,11 +10,11 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #080f1a; font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif; }
+    body { background: #f0f4f8; font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif; }
     ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: #0d1b2a; }
-    ::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 3px; }
-    input::placeholder { color: #3a5a7a; }
+    ::-webkit-scrollbar-track { background: #e2e8f0; }
+    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+    input::placeholder { color: #94a3b8; }
     button:focus { outline: none; }
     @keyframes spin    { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @keyframes fadein  { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -33,11 +33,11 @@ const DB_URL = "https://voting-9aa78-default-rtdb.asia-southeast1.firebasedataba
 const EMOJIS = ["🧑‍💼","👩‍💼","👨‍💼","🎓","🌟","⭐","🦁","🦅","🌿","🔥","🎯","💎"];
 
 const C = {
-  bg:"#080f1a", surface:"#0d1b2a", card:"#112033", border:"#1e3a5f",
-  accent:"#1d6fa4", glow:"#3b9ed4",
-  gold:"#f5c518", goldBg:"rgba(245,197,24,0.07)", goldBorder:"rgba(245,197,24,0.25)",
-  green:"#22c55e", red:"#ef4444", orange:"#f97316",
-  text:"#e2eaf3", muted:"#6b8aaa", dim:"#1a3050",
+  bg:"#f0f4f8", surface:"#ffffff", card:"#ffffff", border:"#d1dbe8",
+  accent:"#2563eb", glow:"#3b82f6",
+  gold:"#d97706", goldBg:"rgba(217,119,6,0.07)", goldBorder:"rgba(217,119,6,0.3)",
+  green:"#16a34a", red:"#dc2626", orange:"#ea580c",
+  text:"#1e293b", muted:"#64748b", dim:"#e2e8f0",
 };
 
 // ── 무기명 토큰 ─────────────────────────────────────────────────
@@ -71,9 +71,9 @@ const thresholdPct    = round             => round===1 ? 66.67 : 50;
 const thresholdLabel  = round             => round===1 ? "2/3 이상 (66.7%)" : "과반수 초과 (50%)";
 
 // ── 공용 스타일 ────────────────────────────────────────────────
-const inp = { width:"100%", background:"#050d18", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.text, fontSize:15, outline:"none", boxSizing:"border-box", marginBottom:10, fontFamily:"inherit" };
+const inp = { width:"100%", background:"#f8fafc", border:`1px solid ${C.border}`, borderRadius:8, padding:"11px 14px", color:C.text, fontSize:15, outline:"none", boxSizing:"border-box", marginBottom:10, fontFamily:"inherit", boxShadow:"inset 0 1px 3px rgba(0,0,0,0.06)" };
 const lbl = { display:"block", color:C.muted, fontSize:11, fontWeight:700, marginBottom:6, letterSpacing:"0.6px", textTransform:"uppercase" };
-const sec = { background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:18, marginBottom:14 };
+const sec = { background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:18, marginBottom:14, boxShadow:"0 1px 4px rgba(0,0,0,0.06)" };
 const sth = { color:C.text, fontWeight:800, fontSize:15, marginBottom:14, paddingBottom:10, borderBottom:`1px solid ${C.border}` };
 const mkBtn = (bg=C.accent, extra={}) => ({ padding:"11px 16px", borderRadius:8, border:"none", background:bg, color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"inherit", transition:"opacity 0.15s", ...extra });
 
@@ -96,21 +96,27 @@ function App() {
   const [ec2,        setEc2]        = useState("1"); // electCount2 input
   const [form,       setForm]       = useState({ name:"", party:"", desc:"", emoji:"🧑‍💼" });
 
-  const token  = useRef(getToken()).current;
-  const base   = DB_URL.replace(/\/+$/, "");
-  const timer  = useRef(null);
-  const savedPw= useRef(localStorage.getItem("evote_pw") || "1234");
+  const token     = useRef(getToken()).current;
+  const base      = DB_URL.replace(/\/+$/, "");
+  const timer     = useRef(null);
+  const savedPw   = useRef(localStorage.getItem("evote_pw") || "1234");
+  const firstLoad = useRef(true);
 
   // ── 데이터 로드 ────────────────────────────────────────────
+  // 편집 인풋(제목·선출인원)은 최초 로드 시에만 동기화
+  // → 3초 폴링이 사용자 입력을 덮어쓰는 버그 방지
   const fetchAll = async () => {
     try {
       const data = await fb.get(base, "vote");
       if (data) {
         if (data.config) {
           setConfig(data.config);
-          setElTitle(data.config.title||"");
-          setEc1(String(data.config.electCount1 || 1));
-          setEc2(String(data.config.electCount2 || 1));
+          if (firstLoad.current) {
+            setElTitle(data.config.title||"");
+            setEc1(String(data.config.electCount1 || 1));
+            setEc2(String(data.config.electCount2 || 1));
+            firstLoad.current = false;
+          }
         }
         setCandidates(data.candidates || {});
         setVoters(data.voters || {});
@@ -123,7 +129,7 @@ function App() {
     (async () => {
       try {
         const existing = await fb.get(base, "vote/config");
-        if (!existing) await fb.set(base, "vote/config", { title:"전자투표", open:false, round:1, electCount1:1, electCount2:1 });
+        if (!existing) await fb.set(base, "vote/config", { title:"전자투표", open:false, round:1, electCount1:1, electCount2:1, completed:false });
         await fetchAll();
         setPhase("main");
         timer.current = setInterval(fetchAll, 3000);
@@ -166,21 +172,34 @@ function App() {
   };
 
   // ── 관리자 ─────────────────────────────────────────────────
-  const saveTitle   = async () => { await fb.patch(base,"vote/config",{title:elTitle}); setConfig(p=>({...p,title:elTitle})); };
+  const saveTitle = async () => {
+    const t = elTitle.trim() || "전자투표";
+    setElTitle(t);
+    await fb.patch(base,"vote/config",{title:t});
+    setConfig(p=>({...p,title:t}));
+  };
   const saveElectCount = async () => {
     const n1 = Math.max(1, parseInt(ec1)||1);
     const n2 = Math.max(1, parseInt(ec2)||1);
+    setEc1(String(n1));
+    setEc2(String(n2));
     await fb.patch(base,"vote/config",{electCount1:n1, electCount2:n2});
     setConfig(p=>({...p,electCount1:n1,electCount2:n2}));
   };
-  const toggleOpen  = async () => { const n=!config.open; await fb.patch(base,"vote/config",{open:n}); setConfig(p=>({...p,open:n})); };
+  const toggleOpen  = async () => {
+    const n = !config.open;
+    // 종료할 때(open: true→false) completed:true 설정
+    const extra = (!n && config.open) ? { completed: true } : {};
+    await fb.patch(base,"vote/config",{ open:n, ...extra });
+    setConfig(p=>({...p, open:n, ...extra}));
+  };
 
   const advanceRunoff = async () => {
     const remaining = electCount - electedList.length;
     if (!confirm(`결선 투표로 진행합니까?\n\n1차 결과가 저장되고, 참여자는 결선에서 다시 투표할 수 있습니다.\n결선 선출 인원: ${config.electCount2||1}명`)) return;
     for (const [id,c] of Object.entries(candidates))
       await fb.patch(base,`vote/candidates/${id}`,{ votes_r1:c.votes||0, votes:0 });
-    await fb.patch(base,"vote/config",{ round:2, open:false });
+    await fb.patch(base,"vote/config",{ round:2, open:false, completed:false });
     await fetchAll();
   };
 
@@ -189,7 +208,7 @@ function App() {
     for (const id of Object.keys(candidates))
       await fb.patch(base,`vote/candidates/${id}`,{ votes:0, votes_r1:0 });
     await fb.del(base,"vote/voters");
-    await fb.patch(base,"vote/config",{ round:1, open:false });
+    await fb.patch(base,"vote/config",{ round:1, open:false, completed:false });
     await fetchAll();
   };
 
@@ -214,22 +233,22 @@ function App() {
   // ══════════════════════════════════════════════════════════
   // 로딩
   if (phase==="loading") return (
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:C.bg,color:C.text,gap:16}}>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0f4f8",color:C.text,gap:16}}>
       <div style={{fontSize:56,animation:"spin 1.8s linear infinite"}}>🗳️</div>
-      <div style={{color:C.muted,fontSize:15,fontWeight:600}}>연결 중...</div>
+      <div style={{color:"#64748b",fontSize:15,fontWeight:600}}>연결 중...</div>
     </div>
   );
 
   // 오류
   if (phase==="error") return (
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:C.bg,color:C.text,padding:28,gap:14}}>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f0f4f8",color:C.text,padding:28,gap:14}}>
       <div style={{fontSize:52}}>⚠️</div>
       <h2 style={{fontWeight:800}}>연결 실패</h2>
       <p style={{color:C.muted,fontSize:14,textAlign:"center",lineHeight:1.9}}>
         Firebase에 연결할 수 없습니다.<br/>
         데이터베이스 보안 규칙이 <code style={{background:"#0a1826",padding:"2px 7px",borderRadius:4}}>read/write: true</code> 인지 확인하세요.
       </p>
-      <div style={{background:"#040d17",border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",fontFamily:"monospace",fontSize:12,color:"#7dd3fc",maxWidth:380,wordBreak:"break-all"}}>{errMsg}</div>
+      <div style={{background:"#f1f5f9",border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",fontFamily:"monospace",fontSize:12,color:"#1e40af",maxWidth:380,wordBreak:"break-all"}}>{errMsg}</div>
       <button style={{...mkBtn(C.accent),fontSize:15,padding:"13px 32px"}} onClick={()=>window.location.reload()}>다시 시도</button>
     </div>
   );
@@ -237,10 +256,10 @@ function App() {
   // ══════════════════════════════════════════════════════════
   // 메인 앱
   return (
-    <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
+    <div style={{background:"#f0f4f8",minHeight:"100vh",color:C.text}}>
 
       {/* ── 헤더 ── */}
-      <header style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 18px",borderBottom:`1px solid ${C.border}`,background:"linear-gradient(90deg,#0c1e32,#080f1a)",position:"sticky",top:0,zIndex:10}}>
+      <header style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 18px",borderBottom:`1px solid ${C.border}`,background:"linear-gradient(90deg,#1e3a5f,#2563eb)",position:"sticky",top:0,zIndex:10}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:22}}>🗳️</span>
           <div>
@@ -250,15 +269,20 @@ function App() {
             </div>
           </div>
         </div>
-        <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 12px",borderRadius:99,fontSize:12,fontWeight:700,background:config.open?"rgba(34,197,94,0.1)":"rgba(239,68,68,0.1)",color:config.open?C.green:C.red,border:`1px solid ${config.open?"rgba(34,197,94,0.25)":"rgba(239,68,68,0.25)"}`}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 12px",borderRadius:99,fontSize:12,fontWeight:700,background:config.open?"rgba(34,197,94,0.1)":config.completed?"rgba(124,58,237,0.08)":"rgba(100,116,139,0.1)",color:config.open?C.green:config.completed?"#7c3aed":C.muted,border:`1px solid ${config.open?"rgba(34,197,94,0.25)":config.completed?"rgba(124,58,237,0.2)":"rgba(100,116,139,0.2)"}`}}>
           <span style={{width:6,height:6,borderRadius:"50%",background:"currentColor",display:"inline-block",animation:config.open?"pulse 2s infinite":undefined}}/>
-          {config.open?"진행중":"대기중"}
+          {config.open?"진행중":config.completed?"종료됨":"대기중"}
         </span>
       </header>
 
       {/* ── 탭 ── */}
-      <div style={{display:"flex",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
-        {[{id:"vote",icon:"🗳",label:"투표하기"},{id:"results",icon:"📊",label:"실시간 결과"},...(isAdmin?[{id:"admin",icon:"⚙️",label:"관리자"}]:[])].map(t=>(
+      <div style={{display:"flex",background:"#ffffff",borderBottom:`1px solid ${C.border}`,boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
+        {[
+            {id:"vote",   icon:"🗳", label:"투표하기"},
+            // 결과 탭: 투표 종료(completed) 후 모두 공개 / 그 외엔 관리자만
+            ...(config.completed || isAdmin ? [{id:"results", icon:"📊", label:"실시간 결과"}] : []),
+            ...(isAdmin ? [{id:"admin", icon:"⚙️", label:"관리자"}] : []),
+          ].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"12px 6px",border:"none",cursor:"pointer",fontFamily:"inherit",background:tab===t.id?"rgba(29,111,164,0.1)":"transparent",color:tab===t.id?C.glow:C.muted,fontSize:13,fontWeight:700,borderBottom:tab===t.id?`2px solid ${C.glow}`:"2px solid transparent",transition:"all 0.15s",whiteSpace:"nowrap"}}>
             {t.icon} {t.label}
           </button>
@@ -271,7 +295,7 @@ function App() {
       {/* ── 관리자 로그인 모달 ── */}
       {modal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.82)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:20}} onClick={()=>setModal(false)}>
-          <div className="fadein" style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:28,maxWidth:300,width:"100%"}} onClick={e=>e.stopPropagation()}>
+          <div className="fadein" style={{background:"#ffffff",border:`1px solid ${C.border}`,borderRadius:14,padding:28,maxWidth:300,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.15)"}} onClick={e=>e.stopPropagation()}>
             <div style={{fontSize:34,textAlign:"center",marginBottom:10}}>🔐</div>
             <h3 style={{color:C.text,marginBottom:16,fontWeight:800,textAlign:"center"}}>관리자 로그인</h3>
             <input style={inp} type="password" placeholder="비밀번호 (기본: 1234)" value={adminPw} autoFocus onChange={e=>setAdminPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&adminLogin()}/>
@@ -289,28 +313,35 @@ function App() {
           <div className="fadein">
 
             {/* 차수 / 기준 안내 */}
-            <div style={{background:round===1?"rgba(29,111,164,0.07)":"rgba(249,115,22,0.07)",border:`1px solid ${round===1?"rgba(29,111,164,0.18)":"rgba(249,115,22,0.18)"}`,borderRadius:10,padding:"11px 16px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
+            <div style={{background:round===1?"#eff6ff":"#fff7ed",border:`1px solid ${round===1?"#bfdbfe":"#fed7aa"}`,borderRadius:10,padding:"11px 16px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
               <span style={{color:round===1?C.glow:"#fb923c",fontWeight:800,fontSize:14}}>{round===1?"📋 1차 투표":"🔥 결선 투표"}</span>
               <span style={{color:C.muted,fontSize:12}}>선출 기준: <strong style={{color:C.text}}>{thresholdLabel(round)}</strong></span>
             </div>
 
             {!config.open&&!voted&&(
-              <div style={{background:"rgba(239,68,68,0.07)",border:"1px solid rgba(239,68,68,0.18)",borderRadius:10,padding:"12px 16px",color:"#fca5a5",fontSize:14,marginBottom:14,textAlign:"center"}}>
+              <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"12px 16px",color:"#dc2626",fontSize:14,marginBottom:14,textAlign:"center"}}>
                 🔴 현재 투표가 진행 중이 아닙니다
               </div>
             )}
 
             {voted?(
-              <div className="fadein" style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:"36px 24px",textAlign:"center"}}>
+              <div className="fadein" style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:16,padding:"36px 24px",textAlign:"center",boxShadow:"0 2px 12px rgba(22,163,74,0.08)"}}>
                 <div style={{fontSize:52,marginBottom:12}}>✅</div>
                 <div style={{fontSize:21,fontWeight:900,color:C.green,marginBottom:6}}>투표 완료!</div>
                 <div style={{color:C.muted,fontSize:14,lineHeight:1.9,marginBottom:20}}>
                   {round===1?"1차 투표":"결선 투표"}에 참여하셨습니다.<br/>
                   <span style={{fontSize:12,color:"#4ade80"}}>🔒 무기명으로 처리되었습니다</span>
                 </div>
-                <button style={mkBtn(C.dim,{color:C.text,padding:"10px 22px"})} onClick={()=>setTab("results")}>
-                  📊 결과 보기
-                </button>
+                {/* 결과 보기: 투표 종료(completed) 후 공개 */}
+                {config.completed ? (
+                  <button style={mkBtn("#2563eb",{color:"#fff",padding:"10px 22px"})} onClick={()=>setTab("results")}>
+                    📊 결과 보기
+                  </button>
+                ) : (
+                  <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,padding:"10px 16px",color:"#1d4ed8",fontSize:13}}>
+                    🔒 투표가 종료되면 결과가 공개됩니다
+                  </div>
+                )}
               </div>
             ):(
               <>
@@ -322,13 +353,13 @@ function App() {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:12,marginBottom:12}}>
                   {Object.entries(candidates).map(([id,c])=>(
                     <div key={id} onClick={()=>{if(config.open){setSelectedId(id);setVoteMsg(null);}}}
-                      style={{background:selectedId===id?"rgba(29,111,164,0.15)":C.card,border:selectedId===id?`2px solid ${C.glow}`:`1px solid ${C.border}`,borderRadius:14,padding:"18px 14px",textAlign:"center",cursor:config.open?"pointer":"default",position:"relative",boxShadow:selectedId===id?"0 0 0 4px rgba(59,158,212,0.1)":undefined,transition:"all 0.15s",userSelect:"none"}}>
+                      style={{background:selectedId===id?"rgba(37,99,235,0.08)":"#ffffff",border:selectedId===id?`2px solid ${C.glow}`:`1px solid #d1dbe8`,borderRadius:14,padding:"18px 14px",textAlign:"center",cursor:config.open?"pointer":"default",position:"relative",boxShadow:selectedId===id?"0 0 0 4px rgba(37,99,235,0.1)":"0 1px 4px rgba(0,0,0,0.06)",transition:"all 0.15s",userSelect:"none"}}>
                       {selectedId===id&&(
                         <div style={{position:"absolute",top:8,right:8,background:C.glow,color:"#fff",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900}}>✓</div>
                       )}
                       <div style={{fontSize:42,marginBottom:8}}>{c.emoji||"👤"}</div>
                       <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:5}}>{c.name}</div>
-                      {c.party&&<div style={{background:C.dim,color:C.muted,fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:99,display:"inline-block"}}>{c.party}</div>}
+                      {c.party&&<div style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:99,display:"inline-block",border:"1px solid #e2e8f0"}}>{c.party}</div>}
                       {c.desc&&<div style={{color:C.muted,fontSize:11,marginTop:7,lineHeight:1.5}}>{c.desc}</div>}
                     </div>
                   ))}
@@ -341,7 +372,7 @@ function App() {
                 </div>
 
                 {voteMsg?.err&&(
-                  <div style={{background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:8,padding:"10px 14px",color:"#fca5a5",fontSize:14,marginBottom:8}}>
+                  <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",color:"#dc2626",fontSize:14,marginBottom:8}}>
                     ⚠️ {voteMsg.err}
                   </div>
                 )}
@@ -366,13 +397,13 @@ function App() {
 
             {/* 선출 완료 배너 */}
             {electionDone&&!config.open&&(
-              <div style={{background:C.goldBg,border:`1px solid ${C.goldBorder}`,borderRadius:16,padding:"24px 20px",marginBottom:20,boxShadow:"0 0 48px rgba(245,197,24,0.08)"}}>
+              <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:16,padding:"24px 20px",marginBottom:20,boxShadow:"0 4px 24px rgba(217,119,6,0.12)"}}>
                 <div style={{fontSize:44,marginBottom:8,textAlign:"center"}}>🏆</div>
                 <div style={{fontSize:12,color:C.gold,fontWeight:800,letterSpacing:"1px",textTransform:"uppercase",marginBottom:10,textAlign:"center"}}>
                   {round===1?"1차 투표":"결선 투표"} 선출 완료 ({electedList.length}명)
                 </div>
                 {electedList.map(([id,c],i)=>(
-                  <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"rgba(245,197,24,0.06)",borderRadius:10,marginBottom:i<electedList.length-1?6:0}}>
+                  <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"rgba(217,119,6,0.06)",borderRadius:10,border:"1px solid rgba(217,119,6,0.12)",marginBottom:i<electedList.length-1?6:0}}>
                     <span style={{fontSize:24}}>{c.emoji||"👤"}</span>
                     <div style={{flex:1}}>
                       <div style={{fontWeight:800,color:C.text,fontSize:15}}>{c.name}{c.party&&<span style={{color:C.muted,fontWeight:400,fontSize:12,marginLeft:6}}>{c.party}</span>}</div>
@@ -388,7 +419,7 @@ function App() {
 
             {/* 기준 미달 안내 */}
             {!electionDone&&!config.open&&totalVotes>0&&(
-              <div style={{background:"rgba(249,115,22,0.07)",border:"1px solid rgba(249,115,22,0.18)",borderRadius:12,padding:"14px 18px",marginBottom:16,textAlign:"center"}}>
+              <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:12,padding:"14px 18px",marginBottom:16,textAlign:"center"}}>
                 <div style={{color:"#fb923c",fontWeight:800,fontSize:14,marginBottom:4}}>
                   {round===1?"⚠️ 1차 투표 — 선출 기준 미달":"⚠️ 결선 투표 — 선출 기준 미달"}
                 </div>
@@ -408,7 +439,7 @@ function App() {
                 {n:`${electedList.length} / ${electCount}명`, l:"선출 현황", c:electionDone?C.gold:C.muted},
                 {n:round===1?"1차":"결선", l:"현재 차수", c:round===1?C.glow:"#fb923c"},
               ].map((s,i)=>(
-                <div key={i} style={{flex:1,background:C.card,border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 8px",textAlign:"center"}}>
+                <div key={i} style={{flex:1,background:"#ffffff",border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 8px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
                   <div style={{fontSize:i===1?16:22,fontWeight:900,color:s.c||C.glow}}>{s.n}</div>
                   <div style={{color:C.muted,fontSize:10,fontWeight:700,marginTop:3}}>{s.l}</div>
                 </div>
@@ -416,7 +447,7 @@ function App() {
             </div>
 
             {/* 황금선 안내 */}
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 12px",background:C.goldBg,border:`1px solid ${C.goldBorder}`,borderRadius:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 12px",background:"rgba(217,119,6,0.05)",border:"1px solid rgba(217,119,6,0.2)",borderRadius:8}}>
               <div style={{width:3,height:14,background:C.gold,borderRadius:2,flexShrink:0}}/>
               <span style={{color:C.muted,fontSize:12}}>
                 황금선 = 선출 기준: <strong style={{color:C.gold}}>{thresholdLabel(round)}</strong>
@@ -431,7 +462,7 @@ function App() {
               const r1total = Object.values(candidates).reduce((s,x)=>s+(x.votes_r1||0),0);
               const rankLabel = elct ? `🏆` : `${i+1}`;
               return (
-                <div key={id} style={{background:elct?C.goldBg:C.card,border:`1px solid ${elct?C.goldBorder:C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
+                <div key={id} style={{background:elct?"#fffbeb":"#ffffff",border:`1px solid ${elct?"#fde68a":C.border}`,borderRadius:12,padding:"14px 16px",marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
                     <div style={{fontSize:22,minWidth:32,textAlign:"center"}}>
                       {elct?"🏆":i===0&&totalVotes>0?`①`:`${i+1}`}
@@ -440,12 +471,12 @@ function App() {
                       <div style={{fontWeight:800,fontSize:15,color:C.text,display:"flex",alignItems:"center",gap:7,marginBottom:9,flexWrap:"wrap"}}>
                         <span>{c.emoji||"👤"}</span>
                         <span>{c.name}</span>
-                        {c.party&&<span style={{background:C.dim,color:C.muted,fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:99}}>{c.party}</span>}
+                        {c.party&&<span style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:99,border:"1px solid #e2e8f0"}}>{c.party}</span>}
                         {elct&&<span style={{background:"rgba(245,197,24,0.12)",color:C.gold,fontSize:11,fontWeight:800,padding:"2px 10px",borderRadius:99,border:`1px solid ${C.goldBorder}`}}>✓ 선출</span>}
                       </div>
                       {/* 득표 바 + 기준선 */}
-                      <div style={{position:"relative",height:8,background:C.dim,borderRadius:99,overflow:"visible",marginBottom:2}}>
-                        <div style={{height:"100%",borderRadius:99,width:`${Math.min(pct,100)}%`,transition:"width 0.7s cubic-bezier(0.4,0,0.2,1)",background:elct?`linear-gradient(90deg,${C.gold},#e8a612)`:i===0&&!elct?`linear-gradient(90deg,${C.accent},${C.glow})`:`linear-gradient(90deg,#1a3a5a,#253f60)`}}/>
+                      <div style={{position:"relative",height:8,background:"#e2e8f0",borderRadius:99,overflow:"visible",marginBottom:2}}>
+                        <div style={{height:"100%",borderRadius:99,width:`${Math.min(pct,100)}%`,transition:"width 0.7s cubic-bezier(0.4,0,0.2,1)",background:elct?`linear-gradient(90deg,${C.gold},#b45309)`:i===0&&!elct?`linear-gradient(90deg,${C.accent},${C.glow})`:`linear-gradient(90deg,#cbd5e1,#94a3b8)`}}/>
                         {/* 선출 기준선 */}
                         <div style={{position:"absolute",top:-5,left:`${tp}%`,transform:"translateX(-50%)",width:2,height:18,background:C.gold,borderRadius:2,opacity:0.8}}/>
                       </div>
@@ -457,7 +488,7 @@ function App() {
                   </div>
                   {/* 결선에서 1차 결과 표시 */}
                   {round===2&&c.votes_r1!==undefined&&(
-                    <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.dim}`,color:C.muted,fontSize:12}}>
+                    <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #f1f5f9",color:C.muted,fontSize:12}}>
                       1차 득표: {c.votes_r1||0}표
                       {r1total>0&&` (${((c.votes_r1||0)/r1total*100).toFixed(1)}%)`}
                     </div>
@@ -482,31 +513,33 @@ function App() {
             {/* 투표 진행 관리 */}
             <div style={sec}>
               <h3 style={sth}>🔄 투표 진행 관리</h3>
-              <div style={{background:"#0a1624",borderRadius:10,padding:"12px 14px",marginBottom:14,fontSize:13,lineHeight:2,color:C.muted}}>
+              <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",marginBottom:14,fontSize:13,lineHeight:2,color:C.muted}}>
                 <div>차수: <strong style={{color:C.text}}>{round===1?"1차 투표":"🔥 결선 투표"}</strong></div>
                 <div>선출 기준: <strong style={{color:C.gold}}>{thresholdLabel(round)}</strong></div>
                 <div>선출 인원: <strong style={{color:C.text}}>{electCount}명</strong> (현재 선출: {electedList.length}명)</div>
-                <div>현재 상태: <strong style={{color:config.open?C.green:C.red}}>{config.open?"진행중":"대기중"}</strong></div>
+                <div>현재 상태: <strong style={{color:config.open?C.green:config.completed?"#7c3aed":C.muted}}>
+                  {config.open?"🟢 진행중":config.completed?"✅ 종료됨":"⏸ 대기중"}
+                </strong></div>
                 {totalVotes>0&&<div>선출 필요 득표: <strong style={{color:C.text}}>{nv}표 이상</strong> (총 {totalVotes}표 기준)</div>}
               </div>
 
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                <button style={mkBtn(config.open?"#7f1d1d":"#14532d",{flex:1,color:config.open?C.red:C.green,padding:"13px 10px",minWidth:120})} onClick={toggleOpen}>
+                <button style={mkBtn(config.open?"#fef2f2":"#f0fdf4",{flex:1,color:config.open?"#dc2626":"#16a34a",padding:"13px 10px",minWidth:120,border:`1px solid ${config.open?"#fecaca":"#bbf7d0"}`})} onClick={toggleOpen}>
                   {config.open?"🔴 투표 종료":"🟢 투표 시작"}
                 </button>
                 {round===1&&!config.open&&(
-                  <button style={mkBtn("#7c2d12",{flex:1,color:"#fb923c",padding:"13px 10px",minWidth:120})} onClick={advanceRunoff}>
+                  <button style={mkBtn("#fff7ed",{flex:1,color:"#c2410c",padding:"13px 10px",minWidth:120,border:"1px solid #fed7aa"})} onClick={advanceRunoff}>
                     🔥 결선 투표로 진행
                   </button>
                 )}
 
               {!electionDone&&!config.open&&totalVotes>0&&round===1&&(
-                <div style={{marginTop:12,padding:"10px 14px",background:"rgba(249,115,22,0.07)",border:"1px solid rgba(249,115,22,0.18)",borderRadius:8,color:"#fb923c",fontSize:13,lineHeight:1.8}}>
+                <div style={{marginTop:12,padding:"10px 14px",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:8,color:"#c2410c",fontSize:13,lineHeight:1.8}}>
                   ⚠️ 1차 목표 {electCount}명 중 {electedList.length}명만 선출되었습니다.<br/>
                   <strong>결선 투표로 진행</strong> 버튼을 눌러 결선을 시작하세요.
                 </div>
               )}
-              <button style={mkBtn("#3b1c6a",{width:"100%",color:"#c084fc",padding:"12px 10px",marginTop:8})} onClick={resetAll}>
+              <button style={mkBtn("#faf5ff",{width:"100%",color:"#7c3aed",padding:"12px 10px",marginTop:8,border:"1px solid #ddd6fe"})} onClick={resetAll}>
                 🔄 전체 초기화 (1차로 되돌리기)
               </button>
             </div>
@@ -528,18 +561,18 @@ function App() {
                 <div>
                   <label style={lbl}>1차 투표 선출 인원</label>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <button onClick={()=>setEc1(p=>String(Math.max(1,parseInt(p)-1)))} style={{...mkBtn(C.dim),padding:"8px 14px",fontSize:18,color:C.text}}>−</button>
+                    <button onClick={()=>setEc1(p=>String(Math.max(1,parseInt(p)-1)))} style={{...mkBtn("#f1f5f9"),padding:"8px 14px",fontSize:18,color:C.text,border:"1px solid #e2e8f0"}}>−</button>
                     <input style={{...inp,marginBottom:0,textAlign:"center",fontSize:20,fontWeight:900,flex:1}} type="number" min="1" value={ec1} onChange={e=>setEc1(e.target.value)}/>
-                    <button onClick={()=>setEc1(p=>String(parseInt(p)+1))} style={{...mkBtn(C.dim),padding:"8px 14px",fontSize:18,color:C.text}}>＋</button>
+                    <button onClick={()=>setEc1(p=>String(parseInt(p)+1))} style={{...mkBtn("#f1f5f9"),padding:"8px 14px",fontSize:18,color:C.text,border:"1px solid #e2e8f0"}}>＋</button>
                   </div>
                   <div style={{color:C.muted,fontSize:11,marginTop:4,textAlign:"center"}}>기준: 2/3 이상</div>
                 </div>
                 <div>
                   <label style={lbl}>결선 투표 선출 인원</label>
                   <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <button onClick={()=>setEc2(p=>String(Math.max(1,parseInt(p)-1)))} style={{...mkBtn(C.dim),padding:"8px 14px",fontSize:18,color:C.text}}>−</button>
+                    <button onClick={()=>setEc2(p=>String(Math.max(1,parseInt(p)-1)))} style={{...mkBtn("#f1f5f9"),padding:"8px 14px",fontSize:18,color:C.text,border:"1px solid #e2e8f0"}}>−</button>
                     <input style={{...inp,marginBottom:0,textAlign:"center",fontSize:20,fontWeight:900,flex:1}} type="number" min="1" value={ec2} onChange={e=>setEc2(e.target.value)}/>
-                    <button onClick={()=>setEc2(p=>String(parseInt(p)+1))} style={{...mkBtn(C.dim),padding:"8px 14px",fontSize:18,color:C.text}}>＋</button>
+                    <button onClick={()=>setEc2(p=>String(parseInt(p)+1))} style={{...mkBtn("#f1f5f9"),padding:"8px 14px",fontSize:18,color:C.text,border:"1px solid #e2e8f0"}}>＋</button>
                   </div>
                   <div style={{color:C.muted,fontSize:11,marginTop:4,textAlign:"center"}}>기준: 과반수 초과</div>
                 </div>
@@ -547,7 +580,7 @@ function App() {
               <button style={mkBtn(C.accent,{width:"100%",padding:"12px"})} onClick={saveElectCount}>
                 선출 인원 저장
               </button>
-              <div style={{marginTop:10,color:C.muted,fontSize:12,lineHeight:1.7,padding:"8px 12px",background:"#0a1826",borderRadius:8}}>
+              <div style={{marginTop:10,color:C.muted,fontSize:12,lineHeight:1.7,padding:"8px 12px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:8}}>
                 💡 현재 설정: 1차 <strong style={{color:C.text}}>{config.electCount1||1}명</strong>, 결선 <strong style={{color:C.text}}>{config.electCount2||1}명</strong>
               </div>
             </div>
@@ -557,7 +590,7 @@ function App() {
               <h3 style={sth}>➕ 후보자 추가</h3>
               <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
                 {EMOJIS.map(e=>(
-                  <button key={e} onClick={()=>setForm(p=>({...p,emoji:e}))} style={{background:form.emoji===e?"rgba(59,158,212,0.2)":C.dim,border:form.emoji===e?`1px solid ${C.glow}`:"1px solid transparent",borderRadius:8,padding:"6px 8px",fontSize:18,cursor:"pointer"}}>
+                  <button key={e} onClick={()=>setForm(p=>({...p,emoji:e}))} style={{background:form.emoji===e?"rgba(37,99,235,0.12)":"#f1f5f9",border:form.emoji===e?`2px solid ${C.glow}`:"1px solid #e2e8f0",borderRadius:8,padding:"6px 8px",fontSize:18,cursor:"pointer"}}>
                     {e}
                   </button>
                 ))}
@@ -574,7 +607,7 @@ function App() {
             <div style={sec}>
               <h3 style={sth}>👥 후보자 목록 <span style={{color:C.muted,fontWeight:400}}>{Object.keys(candidates).length}명</span></h3>
               {Object.entries(candidates).map(([id,c])=>(
-                <div key={id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${C.dim}`}}>
+                <div key={id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9"}}>
                   <span style={{fontSize:22}}>{c.emoji}</span>
                   <div style={{flex:1}}>
                     <div style={{color:C.text,fontWeight:700}}>{c.name}</div>
@@ -583,7 +616,7 @@ function App() {
                       {round===2?`결선 ${c.votes||0}표 / 1차 ${c.votes_r1||0}표`:`${c.votes||0}표`}
                     </div>
                   </div>
-                  <button onClick={()=>delCand(id)} style={{padding:"6px 12px",borderRadius:6,border:"none",background:"#3b1414",color:C.red,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>삭제</button>
+                  <button onClick={()=>delCand(id)} style={{padding:"6px 12px",borderRadius:6,border:"none",background:"#fee2e2",color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>삭제</button>
                 </div>
               ))}
               {Object.keys(candidates).length===0&&<div style={{color:C.muted,fontSize:14}}>등록된 후보자가 없습니다</div>}
@@ -594,13 +627,13 @@ function App() {
               <h3 style={sth}>🔒 투표 현황 (무기명)</h3>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
                 {[{n:roundPeople,l:`${round===1?"1차":"결선"} 참여자`},{n:totalVotes,l:"총 득표수"}].map((s,i)=>(
-                  <div key={i} style={{background:"#0a1826",border:`1px solid ${C.border}`,borderRadius:10,padding:"14px 12px",textAlign:"center"}}>
+                  <div key={i} style={{background:"#f8fafc",border:`1px solid ${C.border}`,borderRadius:10,padding:"14px 12px",textAlign:"center"}}>
                     <div style={{fontSize:26,fontWeight:900,color:C.glow}}>{s.n}</div>
                     <div style={{color:C.muted,fontSize:11,marginTop:3}}>{s.l}</div>
                   </div>
                 ))}
               </div>
-              <div style={{padding:"10px 14px",background:"#0a1826",borderRadius:8,fontSize:12,color:C.muted,lineHeight:1.8}}>
+              <div style={{padding:"10px 14px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,color:C.muted,lineHeight:1.8}}>
                 🔒 이 시스템은 완전 무기명 투표입니다.<br/>
                 투표자의 이름·ID 등 개인정보는 어디에도 저장되지 않습니다.
               </div>
