@@ -444,8 +444,7 @@ function App() {
 
                 {/* 기권 버튼 */}
                 {config.open&&(
-                  <button onClick={()=>{ if(confirm("기권하시겠습니까?
-기권 후 재투표는 불가합니다.")) submitVote(true); }}
+                  <button onClick={()=>{ if(confirm("기권하시겠습니까?\n기권 후 재투표는 불가합니다.")) submitVote(true); }}
                     disabled={vBusy}
                     style={{width:"100%",padding:"12px",borderRadius:10,border:"1px solid #e2e8f0",background:"#f8fafc",color:C.muted,fontSize:14,fontWeight:700,cursor:"pointer",marginTop:8,fontFamily:"inherit",transition:"all 0.15s"}}>
                     ✋ 기권하기
