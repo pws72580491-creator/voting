@@ -108,7 +108,8 @@ function App() {
   const [ec2,        setEc2]        = useState("1"); // electCount2 input
   const [et1,        setEt1]        = useState("two_thirds"); // threshold1 input
   const [et2,        setEt2]        = useState("majority");   // threshold2 input
-  const [form,       setForm]       = useState({ name:"", party:"", desc:"", emoji:"🧑‍💼" });
+  const [form,       setForm]       = useState({ name:"", party:"", desc:"", emoji:"🧑‍💼", photo:"" });
+  const photoRef = useRef(null);
 
   const token     = useRef(getToken()).current;
   // 라운드 변경 시 선택 초기화
@@ -215,6 +216,54 @@ function App() {
   };
 
   // ── 관리자 ─────────────────────────────────────────────────
+  // ── 이미지 → 여권사진 비율(3:4) 크롭 + 압축 ──────────────
+  const processPhoto = (file) => new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith("image/")) { reject("이미지 파일을 선택하세요"); return; }
+    if (file.size > 10 * 1024 * 1024) { reject("10MB 이하 이미지를 사용하세요"); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        // 여권사진 비율: 3:4 (가로:세로)
+        const TARGET_W = 240, TARGET_H = 320;
+        canvas.width  = TARGET_W;
+        canvas.height = TARGET_H;
+        const ctx = canvas.getContext("2d");
+        // 중앙 크롭
+        const srcRatio = img.width / img.height;
+        const tgtRatio = TARGET_W / TARGET_H;
+        let sx, sy, sw, sh;
+        if (srcRatio > tgtRatio) { // 원본이 더 넓음 → 좌우 잘라냄
+          sh = img.height; sw = sh * tgtRatio;
+          sx = (img.width - sw) / 2; sy = 0;
+        } else {                   // 원본이 더 좁음 → 상하 잘라냄
+          sw = img.width; sh = sw / tgtRatio;
+          sx = 0; sy = (img.height - sh) / 2;
+        }
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, TARGET_W, TARGET_H);
+        // JPEG 압축 (품질 0.82 → 약 20-40KB)
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = () => reject("이미지 로딩 실패");
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject("파일 읽기 실패");
+    reader.readAsDataURL(file);
+  });
+
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await processPhoto(file);
+      setForm(p => ({ ...p, photo: dataUrl }));
+    } catch (err) {
+      alert("사진 오류: " + err);
+    }
+    e.target.value = ""; // 같은 파일 재선택 가능하도록
+  };
+
   const saveTitle = async () => {
     const t = elTitle.trim() || "전자투표";
     setElTitle(t);
@@ -258,7 +307,7 @@ function App() {
   const addCand = async () => {
     if (!form.name.trim()) return;
     await fb.post(base,"vote/candidates",{...form,votes:0});
-    setForm({name:"",party:"",desc:"",emoji:"🧑‍💼"});
+    setForm({name:"",party:"",desc:"",emoji:"🧑‍💼",photo:""});
     await fetchAll();
   };
 
@@ -411,11 +460,18 @@ function App() {
                     <div key={id} onClick={()=>toggleCandidate(id)}
                       style={{background:isSelected?"rgba(37,99,235,0.07)":"#ffffff",border:isSelected?`2px solid ${C.accent}`:`1px solid #d1dbe8`,borderRadius:14,padding:"18px 14px",textAlign:"center",cursor:config.open?"pointer":"default",position:"relative",boxShadow:isSelected?"0 0 0 4px rgba(37,99,235,0.1)":"0 1px 4px rgba(0,0,0,0.06)",transition:"all 0.15s",userSelect:"none"}}>
                       {isSelected&&(
-                        <div style={{position:"absolute",top:8,right:8,background:C.accent,color:"#fff",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900}}>
+                        <div style={{position:"absolute",top:8,right:8,background:C.accent,color:"#fff",borderRadius:"50%",width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,zIndex:2,boxShadow:"0 2px 6px rgba(37,99,235,0.4)"}}>
                           {electCount===1?"✓":selIdx+1}
                         </div>
                       )}
-                      <div style={{fontSize:42,marginBottom:8}}>{c.emoji||"👤"}</div>
+                      {/* 여권사진 or 이모지 */}
+                      {c.photo ? (
+                        <div style={{width:72,height:96,borderRadius:6,overflow:"hidden",margin:"0 auto 10px",border:"2px solid #e2e8f0",boxShadow:"0 2px 8px rgba(0,0,0,0.1)",flexShrink:0}}>
+                          <img src={c.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={c.name}/>
+                        </div>
+                      ) : (
+                        <div style={{fontSize:44,marginBottom:10}}>{c.emoji||"👤"}</div>
+                      )}
                       <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:5}}>{c.name}</div>
                       {c.party&&<div style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:700,padding:"2px 9px",borderRadius:99,display:"inline-block",border:"1px solid #e2e8f0"}}>{c.party}</div>}
                       {c.desc&&<div style={{color:C.muted,fontSize:11,marginTop:7,lineHeight:1.5}}>{c.desc}</div>}
@@ -473,8 +529,14 @@ function App() {
                   {round===1?"1차 투표":"결선 투표"} 선출 완료 ({electedList.length}명)
                 </div>
                 {electedList.map(([id,c],i)=>(
-                  <div key={id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"rgba(217,119,6,0.06)",borderRadius:10,border:"1px solid rgba(217,119,6,0.12)",marginBottom:i<electedList.length-1?6:0}}>
-                    <span style={{fontSize:24}}>{c.emoji||"👤"}</span>
+                  <div key={id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:"rgba(217,119,6,0.06)",borderRadius:10,border:"1px solid rgba(217,119,6,0.12)",marginBottom:i<electedList.length-1?6:0}}>
+                    {c.photo ? (
+                      <div style={{width:42,height:56,borderRadius:5,overflow:"hidden",flexShrink:0,border:"2px solid rgba(217,119,6,0.3)",boxShadow:"0 2px 8px rgba(217,119,6,0.2)"}}>
+                        <img src={c.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={c.name}/>
+                      </div>
+                    ) : (
+                      <span style={{fontSize:28}}>{c.emoji||"👤"}</span>
+                    )}
                     <div style={{flex:1}}>
                       <div style={{fontWeight:800,color:C.text,fontSize:15}}>{c.name}{c.party&&<span style={{color:C.muted,fontWeight:400,fontSize:12,marginLeft:6}}>{c.party}</span>}</div>
                     </div>
@@ -539,11 +601,21 @@ function App() {
                       {elct?"🏆":i===0&&totalVotes>0?`①`:`${i+1}`}
                     </div>
                     <div style={{flex:1}}>
-                      <div style={{fontWeight:800,fontSize:15,color:C.text,display:"flex",alignItems:"center",gap:7,marginBottom:9,flexWrap:"wrap"}}>
-                        <span>{c.emoji||"👤"}</span>
-                        <span>{c.name}</span>
-                        {c.party&&<span style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:99,border:"1px solid #e2e8f0"}}>{c.party}</span>}
-                        {elct&&<span style={{background:"rgba(245,197,24,0.12)",color:C.gold,fontSize:11,fontWeight:800,padding:"2px 10px",borderRadius:99,border:`1px solid ${C.goldBorder}`}}>✓ 선출</span>}
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:9,flexWrap:"wrap"}}>
+                        {c.photo ? (
+                          <div style={{width:36,height:48,borderRadius:5,overflow:"hidden",flexShrink:0,border:"1px solid #e2e8f0",boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}>
+                            <img src={c.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={c.name}/>
+                          </div>
+                        ) : (
+                          <span style={{fontSize:28}}>{c.emoji||"👤"}</span>
+                        )}
+                        <div>
+                          <div style={{fontWeight:800,fontSize:15,color:C.text,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:4}}>
+                            <span>{c.name}</span>
+                            {elct&&<span style={{background:"rgba(245,197,24,0.12)",color:C.gold,fontSize:11,fontWeight:800,padding:"2px 10px",borderRadius:99,border:`1px solid ${C.goldBorder}`}}>✓ 선출</span>}
+                          </div>
+                          {c.party&&<span style={{background:"#f1f5f9",color:"#64748b",fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:99,border:"1px solid #e2e8f0"}}>{c.party}</span>}
+                        </div>
                       </div>
                       {/* 득표 바 + 기준선 */}
                       <div style={{position:"relative",height:8,background:"#e2e8f0",borderRadius:99,overflow:"visible",marginBottom:2}}>
@@ -684,13 +756,55 @@ function App() {
             {/* 후보자 추가 */}
             <div style={sec}>
               <h3 style={sth}>➕ 후보자 추가</h3>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
-                {EMOJIS.map(e=>(
-                  <button key={e} onClick={()=>setForm(p=>({...p,emoji:e}))} style={{background:form.emoji===e?"rgba(37,99,235,0.12)":"#f1f5f9",border:form.emoji===e?`2px solid ${C.glow}`:"1px solid #e2e8f0",borderRadius:8,padding:"6px 8px",fontSize:18,cursor:"pointer"}}>
-                    {e}
-                  </button>
-                ))}
+
+              {/* 사진 업로드 */}
+              <div style={{marginBottom:14}}>
+                <label style={lbl}>증명사진 (여권사진 비율 3:4 자동 크롭)</label>
+                <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+                  {/* 미리보기 - 여권사진 비율 */}
+                  <div style={{width:90,height:120,borderRadius:8,border:"2px dashed #d1dbe8",background:"#f8fafc",flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative"}} onClick={()=>photoRef.current?.click()}>
+                    {form.photo ? (
+                      <>
+                        <img src={form.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt="미리보기"/>
+                        <button onClick={e=>{e.stopPropagation();setForm(p=>({...p,photo:""}));}}
+                          style={{position:"absolute",top:3,right:3,width:20,height:20,borderRadius:"50%",border:"none",background:"rgba(220,38,38,0.85)",color:"#fff",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900}}>✕</button>
+                      </>
+                    ) : (
+                      <div style={{textAlign:"center",color:C.muted}}>
+                        <div style={{fontSize:28,marginBottom:4}}>📷</div>
+                        <div style={{fontSize:10,fontWeight:700}}>클릭하여<br/>업로드</div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{flex:1}}>
+                    <button onClick={()=>photoRef.current?.click()}
+                      style={{...mkBtn("#f1f5f9"),color:C.text,border:"1px solid #d1dbe8",width:"100%",marginBottom:8,padding:"10px"}}>
+                      📂 사진 선택
+                    </button>
+                    <div style={{fontSize:11,color:C.muted,lineHeight:1.7}}>
+                      · JPG·PNG·WEBP 지원<br/>
+                      · 자동으로 3:4 비율로 크롭됩니다<br/>
+                      · 사진 없으면 이모지가 표시됩니다
+                    </div>
+                  </div>
+                </div>
+                <input ref={photoRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePhotoChange}/>
               </div>
+
+              {/* 사진 없을 때 이모지 선택 */}
+              {!form.photo && (
+                <div style={{marginBottom:12}}>
+                  <label style={lbl}>이모지 선택 (사진 미등록 시 표시)</label>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {EMOJIS.map(e=>(
+                      <button key={e} onClick={()=>setForm(p=>({...p,emoji:e}))} style={{background:form.emoji===e?"rgba(37,99,235,0.12)":"#f1f5f9",border:form.emoji===e?`2px solid ${C.glow}`:"1px solid #e2e8f0",borderRadius:8,padding:"6px 8px",fontSize:18,cursor:"pointer"}}>
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <input style={inp} placeholder="이름 *"            value={form.name}  onChange={e=>setForm(p=>({...p,name:e.target.value}))}/>
               <input style={inp} placeholder="정당 / 소속 (선택)" value={form.party} onChange={e=>setForm(p=>({...p,party:e.target.value}))}/>
               <input style={inp} placeholder="소개 한 줄 (선택)" value={form.desc}  onChange={e=>setForm(p=>({...p,desc:e.target.value}))}/>
@@ -704,7 +818,13 @@ function App() {
               <h3 style={sth}>👥 후보자 목록 <span style={{color:C.muted,fontWeight:400}}>{Object.keys(candidates).length}명</span></h3>
               {Object.entries(candidates).map(([id,c])=>(
                 <div key={id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9"}}>
-                  <span style={{fontSize:22}}>{c.emoji}</span>
+                  {c.photo ? (
+                    <div style={{width:30,height:40,borderRadius:4,overflow:"hidden",flexShrink:0,border:"1px solid #e2e8f0"}}>
+                      <img src={c.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt={c.name}/>
+                    </div>
+                  ) : (
+                    <span style={{fontSize:22,flexShrink:0}}>{c.emoji}</span>
+                  )}
                   <div style={{flex:1}}>
                     <div style={{color:C.text,fontWeight:700}}>{c.name}</div>
                     <div style={{color:C.muted,fontSize:12}}>
